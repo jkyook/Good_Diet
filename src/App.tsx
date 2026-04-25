@@ -3,48 +3,102 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useRef, ChangeEvent } from 'react';
-import { Camera, Upload, Utensils, AlertCircle, CheckCircle2, RefreshCw, User, Info } from 'lucide-react';
+import { useState, useRef, ChangeEvent, useEffect } from 'react';
+import { Camera, Upload, Utensils, AlertCircle, CheckCircle2, RefreshCw, User, Info, Calendar, Plus, Trash2, History, ChevronRight, Zap, Target } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
-import { analyzeFood } from './services/geminiService';
+import { analyzeFood, AnalysisResult } from './services/geminiService';
 
 type Gender = 'male' | 'female';
 
+interface MealRecord extends AnalysisResult {
+  id: string;
+  image: string;
+}
+
 export default function App() {
-  const [image, setImage] = useState<string | null>(null);
+  const [images, setImages] = useState<{ id: string; url: string; file: File }[]>([]);
   const [age, setAge] = useState<number>(30);
   const [gender, setGender] = useState<Gender>('male');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+  const [history, setHistory] = useState<MealRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [selectedMeal, setSelectedMeal] = useState<MealRecord | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Load history from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('mealwise_history');
+    if (saved) {
+      try {
+        setHistory(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to load history", e);
+      }
+    }
+  }, []);
+
+  // Save history to localStorage
+  useEffect(() => {
+    localStorage.setItem('mealwise_history', JSON.stringify(history));
+  }, [history]);
+
   const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImage(reader.result as string);
-        setResult(null);
-        setError(null);
-      };
-      reader.readAsDataURL(file);
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      const newImages = files.map(file => ({
+        id: Math.random().toString(36).substr(2, 9),
+        url: URL.createObjectURL(file),
+        file: file
+      }));
+      setImages(prev => [...prev, ...newImages]);
+      setError(null);
     }
   };
 
+  const removeImage = (id: string) => {
+    setImages(prev => prev.filter(img => img.id !== id));
+  };
+
   const startAnalysis = async () => {
-    if (!image) {
-      setError('음식 사진을 먼저 업로드해주세요.');
+    if (images.length === 0) {
+      setError('분석할 음식 사진을 하나 이상 업로드해주세요.');
       return;
     }
 
     setLoading(true);
     setError(null);
+    
     try {
-      const analysis = await analyzeFood(image, age, gender);
-      setResult(analysis);
+      const results: MealRecord[] = [];
+      for (const img of images) {
+        // Convert file to base64
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(img.file);
+        });
+        const base64 = await base64Promise;
+        
+        // Use file mod date as fallback or current date
+        const mealDate = new Date(img.file.lastModified).toISOString();
+        const existingCount = history.filter(h => new Date(h.date).toDateString() === new Date(mealDate).toDateString()).length;
+        
+        const analysis = await analyzeFood(base64, age, gender, existingCount);
+        
+        const record: MealRecord = {
+          ...analysis,
+          id: img.id,
+          image: base64,
+          date: mealDate 
+        };
+        results.push(record);
+      }
+      
+      setHistory(prev => [...results, ...prev]);
+      setImages([]);
+      setSelectedMeal(results[0]);
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
     } finally {
@@ -52,230 +106,272 @@ export default function App() {
     }
   };
 
-  const reset = () => {
-    setImage(null);
-    setResult(null);
-    setError(null);
+  const getDailyStats = (date: string) => {
+    const dailyMeals = history.filter(h => new Date(h.date).toDateString() === new Date(date).toDateString());
+    const totalCalories = dailyMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
+    return { count: dailyMeals.length, calories: totalCalories };
+  };
+
+  // Group history by date
+  const groupedHistory = history.reduce((groups: { [key: string]: MealRecord[] }, meal) => {
+    const date = new Date(meal.date).toDateString();
+    if (!groups[date]) groups[date] = [];
+    groups[date].push(meal);
+    return groups;
+  }, {});
+
+  const deleteRecord = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setHistory(prev => prev.filter(m => m.id !== id));
+    if (selectedMeal?.id === id) setSelectedMeal(null);
   };
 
   return (
-    <div className="min-h-screen bg-[#FDFCFB] text-[#2D2926] font-sans selection:bg-[#EEDDCC]">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans p-4 md:p-8 overflow-x-hidden">
       {/* Header */}
-      <header className="border-b border-[#E6E1DC] bg-white sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-[#FF6B35] rounded-xl flex items-center justify-center shadow-sm">
-              <Utensils className="text-white w-6 h-6" />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight text-[#1A1A1A]">MealWise</h1>
+      <header className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
+        <div>
+          <h1 className="text-4xl font-black tracking-tighter text-slate-900 uppercase">
+            FlavorGuard <span className="text-orange-500">AI</span>
+          </h1>
+          <p className="text-slate-500 text-sm font-medium">Personalized Nutritional Analysis & History</p>
+        </div>
+        <div className="flex gap-4 items-center">
+          <div className="text-right hidden sm:block">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Target Profile</p>
+            <p className="font-bold">{gender === 'male' ? '남성' : '여성'}, {age}세</p>
           </div>
-          <div className="text-xs uppercase tracking-widest font-semibold text-[#8E877F]">
-            AI 식단 분석기
+          <div className="w-12 h-12 bg-slate-900 rounded-full border-2 border-slate-900 flex items-center justify-center text-white shadow-lg">
+            <span className="text-xs font-bold">{gender === 'male' ? 'M' : 'F'}{age}</span>
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8 md:py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-          
-          {/* Left Column: Inputs */}
-          <div className="space-y-8">
-            <section>
-              <div className="flex items-center gap-2 mb-4">
-                <User className="w-5 h-5 text-[#FF6B35]" />
-                <h2 className="text-lg font-bold">사용자 정보</h2>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase text-[#8E877F] tracking-wide">나이 (세)</label>
-                  <input
-                    type="number"
-                    value={age}
-                    onChange={(e) => setAge(Number(e.target.value))}
-                    className="w-full h-12 px-4 rounded-xl border-2 border-[#E6E1DC] focus:border-[#FF6B35] focus:outline-none transition-colors bg-white font-medium shadow-sm hover:border-[#D1CCC7]"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase text-[#8E877F] tracking-wide">성별</label>
-                  <div className="flex rounded-xl overflow-hidden border-2 border-[#E6E1DC] shadow-sm">
-                    <button
-                      onClick={() => setGender('male')}
-                      className={`flex-1 h-12 font-medium transition-all ${
-                        gender === 'male' ? 'bg-[#FF6B35] text-white' : 'bg-white text-[#8E877F] hover:bg-[#F9F7F5]'
-                      }`}
-                    >
-                      남성
-                    </button>
-                    <button
-                      onClick={() => setGender('female')}
-                      className={`flex-1 h-12 font-medium transition-all ${
-                        gender === 'female' ? 'bg-[#FF6B35] text-white' : 'bg-white text-[#8E877F] hover:bg-[#F9F7F5]'
-                      }`}
-                    >
-                      여성
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Camera className="w-5 h-5 text-[#FF6B35]" />
-                <h2 className="text-lg font-bold">음식 사진</h2>
-              </div>
-              
-              <div 
-                className={`relative group h-80 rounded-3xl border-2 border-dashed transition-all cursor-pointer overflow-hidden flex flex-col items-center justify-center bg-white ${
-                  image ? 'border-[#FF6B35]' : 'border-[#E6E1DC] hover:border-[#D1CCC7]'
-                }`}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {image ? (
-                  <>
-                    <img src={image} alt="Uploaded food" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <p className="text-white font-bold flex items-center gap-2">
-                        <RefreshCw className="w-5 h-5" /> 사진 변경
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-center p-8">
-                    <div className="w-16 h-16 bg-[#F9F7F5] rounded-2xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-                      <Upload className="text-[#8E877F] w-8 h-8" />
-                    </div>
-                    <p className="font-bold text-[#1A1A1A] mb-1">식단 사진을 클릭하여 올리기</p>
-                    <p className="text-sm text-[#8E877F]">또는 파일을 여기로 드래그 하세요</p>
-                  </div>
-                )}
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleImageUpload}
-                  accept="image/*"
-                  className="hidden"
+      {/* Main Bento Grid */}
+      <main className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-6 auto-rows-min">
+        
+        {/* Profile & Input Column (Left) */}
+        <div className="md:col-span-4 space-y-6">
+          {/* User Settings Card */}
+          <div className="bg-white border-2 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] p-6">
+            <h4 className="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">Profile Settings</h4>
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500">나이</label>
+                <input 
+                  type="number" 
+                  value={age} 
+                  onChange={e => setAge(Number(e.target.value))}
+                  className="w-full border-2 border-slate-900 px-3 py-2 font-bold focus:outline-none focus:bg-orange-50"
                 />
               </div>
-            </section>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500">성별</label>
+                <div className="flex border-2 border-slate-900">
+                  <button 
+                    onClick={() => setGender('male')}
+                    className={`flex-1 py-2 text-xs font-black uppercase border-r-2 border-slate-900 ${gender === 'male' ? 'bg-slate-900 text-white' : 'hover:bg-slate-50'}`}
+                  >남성</button>
+                  <button 
+                    onClick={() => setGender('female')}
+                    className={`flex-1 py-2 text-xs font-black uppercase ${gender === 'female' ? 'bg-slate-900 text-white' : 'hover:bg-slate-50'}`}
+                  >여성</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Upload Card */}
+          <div className="bg-white border-2 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] p-6">
+            <h4 className="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">Meal Capture</h4>
+            <div 
+              className="border-2 border-dashed border-slate-300 p-8 text-center cursor-pointer hover:border-orange-500 transition-colors group"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="w-8 h-8 mx-auto mb-2 text-slate-300 group-hover:text-orange-500 transition-colors" />
+              <p className="text-xs font-bold uppercase tracking-tight">Click to Upload Food Photos</p>
+              <input type="file" multiple ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
+            </div>
+
+            {/* Preview Grid */}
+            {images.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mt-4">
+                {images.map(img => (
+                  <div key={img.id} className="relative aspect-square border border-slate-900 group">
+                    <img src={img.url} className="w-full h-full object-cover" />
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); removeImage(img.id); }}
+                      className="absolute -top-2 -right-2 bg-rose-500 text-white p-1 border border-slate-900 shadow-[2px_2px_0px_0px_rgba(15,23,42,1)]"
+                    >
+                      <Plus className="w-3 h-3 rotate-45" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <button
               onClick={startAnalysis}
-              disabled={loading || !image}
-              className={`w-full h-16 rounded-2xl font-bold text-lg shadow-lg flex items-center justify-center gap-3 transition-all ${
-                loading || !image 
-                  ? 'bg-[#E6E1DC] text-[#8E877F] cursor-not-allowed shadow-none' 
-                  : 'bg-[#1A1A1A] text-white hover:bg-[#333333] active:scale-[0.98]'
+              disabled={loading || images.length === 0}
+              className={`w-full mt-6 py-4 text-sm font-black uppercase border-2 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all ${
+                loading || images.length === 0 ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none border-slate-300' : 'bg-orange-500 text-white hover:bg-orange-600'
               }`}
             >
-              {loading ? (
-                <>
-                  <RefreshCw className="w-6 h-6 animate-spin" />
-                  AI 분석 중...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-6 h-6" />
-                  영양 분석 시작하기
-                </>
-              )}
+              {loading ? 'Analyzing...' : 'Start Guard Analysis'}
             </button>
+          </div>
 
-            {error && (
-              <motion.div 
-                initial={{ opacity: 0, y: 10 }}
+          {/* History Sidebar */}
+          <div className="bg-slate-900 text-white border-2 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] p-6 max-h-[400px] overflow-y-auto custom-scrollbar">
+            <h4 className="text-xs font-black uppercase text-slate-500 mb-4 tracking-widest flex items-center gap-2">
+              <History className="w-4 h-4" /> Log History
+            </h4>
+            <div className="space-y-6">
+              {Object.keys(groupedHistory).length === 0 && (
+                <p className="text-[10px] text-slate-500 text-center py-8">기록이 없습니다.</p>
+              )}
+              {Object.entries(groupedHistory).map(([date, meals]) => {
+                const stats = getDailyStats(date);
+                return (
+                  <div key={date} className="space-y-2">
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-1">
+                      <p className="text-[10px] font-black text-slate-400 uppercase">{date}</p>
+                      <p className="text-[10px] font-black text-orange-500">{stats.calories}KCAL / {stats.count} MEALS</p>
+                    </div>
+                    {meals.map(meal => (
+                      <div 
+                        key={meal.id} 
+                        onClick={() => setSelectedMeal(meal)}
+                        className={`flex items-center gap-3 p-2 bg-slate-800 border border-transparent hover:border-orange-500 cursor-pointer transition-all ${selectedMeal?.id === meal.id ? 'border-orange-500 bg-slate-700' : ''}`}
+                      >
+                        <img src={meal.image} className="w-8 h-8 object-cover border border-slate-700" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-bold uppercase truncate">{meal.foodName}</p>
+                          <p className="text-[8px] text-slate-500 uppercase">{meal.calories}kcal</p>
+                        </div>
+                        <button 
+                          onClick={(e) => deleteRecord(meal.id, e)}
+                          className="text-slate-600 hover:text-rose-500 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Dynamic content Column (Right) */}
+        <div className="md:col-span-8 space-y-6">
+          <AnimatePresence mode="wait">
+            {selectedMeal ? (
+              <motion.div
+                key={selectedMeal.id}
+                initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 mt-4"
+                exit={{ opacity: 0, y: -20 }}
+                className="grid grid-cols-1 md:grid-cols-2 gap-6"
               >
-                <AlertCircle className="text-red-500 w-5 h-5 shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700 font-medium">{error}</p>
+                {/* Image Focus */}
+                <div className="md:col-span-2 bg-white border-2 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] relative aspect-video md:aspect-[21/9] overflow-hidden group">
+                  <img src={selectedMeal.image} className="w-full h-full object-cover grayscale-[0.2] transition-all duration-700 group-hover:scale-105" />
+                  <div className="absolute top-4 left-4 bg-slate-900 text-white px-3 py-1 text-[10px] font-black uppercase tracking-widest">
+                    Subject: {selectedMeal.foodName}
+                  </div>
+                  <div className="absolute bottom-4 right-4 bg-white border-2 border-slate-900 px-3 py-1 text-[10px] font-black uppercase text-slate-900">
+                    Energy Intake: {selectedMeal.calories} kcal
+                  </div>
+                </div>
+
+                {/* Analysis Score/Markdown */}
+                <div className="md:col-span-1 bg-white border-2 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] p-8">
+                  <div className="prose prose-slate max-w-none prose-sm custom-prose">
+                    <ReactMarkdown>{selectedMeal.markdown}</ReactMarkdown>
+                  </div>
+                </div>
+
+                {/* Right Side Cards */}
+                <div className="md:col-span-1 space-y-6">
+                  {/* Daily Progress */}
+                  <div className="bg-emerald-50 border-2 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] p-6 flex flex-col justify-between min-h-[160px]">
+                    <div className="flex justify-between items-start">
+                      <span className="bg-emerald-500 text-white px-2 py-0.5 text-[10px] font-bold uppercase">Daily Goal Tracker</span>
+                      <Target className="text-emerald-600 w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-lg text-slate-800 leading-tight uppercase mb-1">
+                        {getDailyStats(selectedMeal.date).calories} / 2500 kcal
+                      </h3>
+                      <div className="w-full h-3 bg-slate-200 border border-slate-900 overflow-hidden">
+                        <div 
+                          className="h-full bg-emerald-500 transition-all duration-1000" 
+                          style={{ width: `${Math.min(100, (getDailyStats(selectedMeal.date).calories / 2500) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] font-bold text-slate-500 mt-2 uppercase">Recommended Daily Intake for Age {age}</p>
+                    </div>
+                  </div>
+
+                  {/* Quick Action Item */}
+                  <div className="bg-amber-50 border-2 border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] p-6">
+                    <h4 className="text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest flex items-center gap-2">
+                       <Zap className="w-3 h-3" /> Quick Optimization
+                    </h4>
+                    <p className="text-xs font-bold text-slate-700 leading-relaxed uppercase italic">
+                      "이 식사는 평균보다 칼로리가 높습니다. 저녁 식단은 가벼운 샐러드와 식후 20분 걷기를 추천합니다."
+                    </p>
+                  </div>
+
+                  <button 
+                    onClick={() => setSelectedMeal(null)}
+                    className="w-full bg-slate-900 text-white py-4 text-xs font-black uppercase border-2 border-slate-900 hover:bg-slate-800 transition-all"
+                  >
+                    Return to Scanner
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="col-span-8 bg-[#f1f5f9] border-2 border-dashed border-slate-300 rounded-[2rem] flex flex-col items-center justify-center py-24 px-12 text-center"
+              >
+                <div className="w-24 h-24 bg-white border-2 border-slate-900 rounded-full flex items-center justify-center mb-8 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]">
+                  <Utensils className="text-slate-900 w-10 h-10" />
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 mb-4 uppercase tracking-tighter">Ready for Analysis</h3>
+                <p className="text-slate-500 font-medium max-w-sm">음식 사진을 업로드하거나 목록에서 이전 기록을 선택하여 상세 영양 분석 및 운동 가이드를 확인하세요.</p>
               </motion.div>
             )}
-          </div>
-
-          {/* Right Column: Results */}
-          <div className="relative">
-            <AnimatePresence mode="wait">
-              {result ? (
-                <motion.div
-                  key="result"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="bg-white rounded-3xl border border-[#E6E1DC] overflow-hidden shadow-xl"
-                >
-                  <div className="bg-[#1A1A1A] p-6 text-white flex items-center justify-between">
-                    <h3 className="text-xl font-bold">분석 리포트</h3>
-                    <button 
-                      onClick={reset}
-                      className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                      title="새로 시작"
-                    >
-                      <RefreshCw className="w-5 h-5" />
-                    </button>
-                  </div>
-                  <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                    <div className="prose prose-stone max-w-none prose-h2:text-lg prose-h2:font-bold prose-h2:mb-2 prose-h2:mt-6 prose-p:text-[#4A443F] prose-li:text-[#4A443F]">
-                      <ReactMarkdown>{result}</ReactMarkdown>
-                    </div>
-                  </div>
-                  <div className="p-6 bg-[#F9F7F5] border-t border-[#E6E1DC]">
-                    <div className="flex items-center gap-2 text-[#8E877F] text-xs font-bold uppercase tracking-wider">
-                      <Info className="w-4 h-4" />
-                      이 리포트는 AI 분석 결과이며 실제 의학적 소견을 대체할 수 없습니다.
-                    </div>
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="placeholder"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="h-full min-h-[500px] border-2 border-dashed border-[#E6E1DC] rounded-3xl flex flex-col items-center justify-center p-12 text-center"
-                >
-                  <div className="w-20 h-20 bg-[#F9F7F5] rounded-full flex items-center justify-center mb-6">
-                    <Utensils className="text-[#D1CCC7] w-10 h-10" />
-                  </div>
-                  <h3 className="text-xl font-bold text-[#1A1A1A] mb-2 font-serif italic">식단 리포트 대기 중</h3>
-                  <p className="text-[#8E877F]">사진을 찍거나 업로드하시면<br />맞춤형 영양 보고서가 생성됩니다.</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          </AnimatePresence>
         </div>
       </main>
 
-      <footer className="max-w-4xl mx-auto px-4 py-12 border-t border-[#E6E1DC] mt-12">
-        <p className="text-sm text-[#8E877F] text-center">
-          © 2026 MealWise. All rights reserved. <br className="md:hidden" />
-          건강한 일상을 위한 AI 동반자.
-        </p>
+      <footer className="max-w-7xl mx-auto mt-12 py-8 border-t-2 border-slate-200 flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+        <div className="flex gap-8">
+          <div className="flex items-center gap-2"><div className="w-2 h-2 bg-rose-500"></div> Risk High</div>
+          <div className="flex items-center gap-2"><div className="w-2 h-2 bg-amber-500"></div> Warning</div>
+          <div className="flex items-center gap-2"><div className="w-2 h-2 bg-emerald-500"></div> Optimal</div>
+        </div>
+        <div className="text-slate-900">FlavorGuard AI Core v2.5.1</div>
       </footer>
 
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #F9F7F5;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #D1CCC7;
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #8E877F;
-        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 0; }
         
-        .prose h1 { font-size: 1.5rem; font-weight: 800; margin-top: 1.5rem; margin-bottom: 1rem; color: #1A1A1A; }
-        .prose h2 { font-size: 1.25rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #1A1A1A; border-bottom: 1px solid #E6E1DC; padding-bottom: 0.25rem; }
-        .prose h3 { font-size: 1.1rem; font-weight: 700; margin-top: 1rem; margin-bottom: 0.5rem; color: #1A1A1A; }
-        .prose p { margin-bottom: 1rem; line-height: 1.7; color: #4A443F; }
-        .prose ul, .prose ol { margin-bottom: 1rem; padding-left: 1.5rem; }
-        .prose li { margin-bottom: 0.5rem; line-height: 1.6; color: #4A443F; list-style-type: decimal; }
-        .prose ul li { list-style-type: disc; }
-        .prose strong { color: #1A1A1A; font-weight: 700; }
-        .prose blockquote { border-left: 4px solid #FF6B35; padding-left: 1rem; font-style: italic; color: #6B635B; margin: 1.5rem 0; }
+        .custom-prose h1 { font-family: ui-sans-serif, system-ui; font-size: 1.25rem; font-weight: 900; text-transform: uppercase; border-bottom: 2px solid #0f172a; margin-bottom: 1rem; color: #0f172a; }
+        .custom-prose h2 { font-size: 1rem; font-weight: 800; text-transform: uppercase; color: #0f172a; margin-top: 1.5rem; }
+        .custom-prose p { font-size: 0.875rem; color: #475569; font-weight: 500; margin-bottom: 0.75rem; line-height: 1.6; }
+        .custom-prose ul { list-style: none; padding: 0; }
+        .custom-prose li { position: relative; padding-left: 1rem; font-size: 0.8125rem; font-weight: 600; text-transform: uppercase; color: #1e293b; margin-bottom: 0.5rem; }
+        .custom-prose li::before { content: \"→\"; position: absolute; left: 0; color: #f97316; font-weight: 900; }
+        .custom-prose strong { color: #0f172a; font-weight: 900; }
       `}</style>
     </div>
   );

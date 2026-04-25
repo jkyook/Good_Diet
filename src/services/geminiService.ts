@@ -3,36 +3,41 @@ import { GoogleGenAI } from "@google/genai";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export interface AnalysisResult {
+  date: string;
   foodName: string;
-  nutrients: {
-    calories: string;
-    carbs: string;
-    protein: string;
-    fat: string;
-  };
-  score: number;
-  suitability: string;
-  problems: string[];
-  suggestions: string[];
-  detailedAnalysis: string;
+  calories: number;
+  markdown: string;
 }
 
 export const analyzeFood = async (
   imageData: string,
   age: number,
-  gender: 'male' | 'female'
-): Promise<string> => {
+  gender: 'male' | 'female',
+  existingMealsCount: number = 0
+): Promise<AnalysisResult> => {
   const prompt = `
-당신은 최고의 영양사입니다. 제공된 음식 사진을 분석하여 사용자의 나이(${age}세)와 성별(${gender === 'male' ? '남성' : '여성'})에 적합한 식단인지 상세히 평가해주세요.
+당신은 최고의 AI 영양사 및 운동 전문가입니다. 제공된 음식 사진을 분석하여 사용자의 나이(${age}세)와 성별(${gender === 'male' ? '남성' : '여성'})에 적격한지 분석해주세요.
+이번이 오늘 ${existingMealsCount + 1}번째 식사 분석입니다.
 
-다음 항목들을 포함하여 분석 결과를 Markdown 형식으로 작성해주세요:
-1. **음식 이름 및 특징**: 사진에 보이는 음식이 무엇인지 설명.
-2. **나이/성별 적합도**: 해당 연령대와 성별의 영양 권장량(칼로리, 단백질 등)을 고려한 점수 (0-100점).
-3. **영양 분석**: 추정 칼로리 및 주요 영양소(탄수화물, 단백질, 지방 등) 분석.
-4. **문제점 및 우려사항**: 나트륨 과다, 영양 불균형, 특정 가공식품 유무 등.
-5. **개선 제안**: 더 건강한 식사를 위해 추가하거나 빼야 할 점.
+다음 형식을 엄격히 지켜서 Markdown으로 작성해주세요:
 
-반응은 매우 전문적이면서도 친절한 한국어로 작성해주세요.
+# [음식 이름] 분석 리포트
+
+## 1. 영양 성분 요약
+* **추정 칼로리**: [숫자] kcal (반드시 'kcal' 앞에 숫자만 기입)
+* **주요 영양소**: 탄수화물, 단백질, 지방량 추정치
+
+## 2. 나이/성별 적합도 및 문제점
+[연령과 성별을 고려한 구체적인 분석 및 주의사항]
+
+## 3. 추천 곁들임 음식
+[이 음식과 함께 먹으면 영양 균형이 좋아질 수 있는 음식 추천]
+
+## 4. 추천 운동
+[이 식사의 칼로리를 소모하거나 영양 흡수를 돕기 위한 구체적인 운동 추천]
+
+마지막 줄에 다음 형식으로 데이터를 포함해주세요 (사용자에게는 보이지 않게):
+---DATA:{"calories": [숫자], "foodName": "[음식명이름]"}---
 `;
 
   try {
@@ -53,7 +58,25 @@ export const analyzeFood = async (
       ],
     });
 
-    return response.text || "분석 결과를 생성하지 못했습니다.";
+    const text = response.text || "";
+    
+    // Extract structured data from the tag
+    const dataMatch = text.match(/---DATA:({.*})---/);
+    let extractedData = { calories: 0, foodName: "알 수 없는 음식" };
+    if (dataMatch) {
+      try {
+        extractedData = JSON.parse(dataMatch[1]);
+      } catch (e) {
+        console.error("JSON parse error", e);
+      }
+    }
+
+    return {
+      date: new Date().toISOString(),
+      foodName: extractedData.foodName,
+      calories: extractedData.calories,
+      markdown: text.replace(/---DATA:({.*})---/, "").trim(),
+    };
   } catch (error) {
     console.error("Gemini Analysis Error:", error);
     throw new Error("음식 분석 중 오류가 발생했습니다.");
