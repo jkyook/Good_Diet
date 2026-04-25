@@ -1,0 +1,10 @@
+{
+  "name": "MealWise (식단 분석기)",
+  "description": "음식 사진을 통해 나이와 성별에 적합한 식단인지 분석하고 영양 균형 및 개선점을 제안하는 AI 프로그램입니다.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "vision"
+  ]
+}
