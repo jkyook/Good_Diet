@@ -61,6 +61,16 @@ export default function App() {
     setImages(prev => prev.filter(img => img.id !== id));
   };
 
+  const [loadingStep, setLoadingStep] = useState(0);
+  const loadingSteps = [
+    "이미지 스캔 중...",
+    "식재료 식별 중...",
+    "영양소 함량 계측 중...",
+    "나이/성별 맞춤 분석 중...",
+    "운동 및 페어링 추천 생성 중...",
+    "최종 리포트 구성 중..."
+  ];
+
   const startAnalysis = async () => {
     if (images.length === 0) {
       setError('분석할 음식 사진을 하나 이상 업로드해주세요.');
@@ -69,11 +79,16 @@ export default function App() {
 
     setLoading(true);
     setError(null);
+    setLoadingStep(0);
     
     try {
       const results: MealRecord[] = [];
-      for (const img of images) {
-        // Convert file to base64
+      for (const [index, img] of images.entries()) {
+        // Simple step progression for UI feel
+        const stepInterval = setInterval(() => {
+          setLoadingStep(prev => (prev < loadingSteps.length - 1 ? prev + 1 : prev));
+        }, 1500);
+
         const reader = new FileReader();
         const base64Promise = new Promise<string>((resolve) => {
           reader.onloadend = () => resolve(reader.result as string);
@@ -81,7 +96,6 @@ export default function App() {
         });
         const base64 = await base64Promise;
         
-        // Use file mod date as fallback or current date
         const mealDate = new Date(img.file.lastModified).toISOString();
         const existingCount = history.filter(h => new Date(h.date).toDateString() === new Date(mealDate).toDateString()).length;
         
@@ -94,6 +108,7 @@ export default function App() {
           date: mealDate 
         };
         results.push(record);
+        clearInterval(stepInterval);
       }
       
       setHistory(prev => [...results, ...prev]);
@@ -103,6 +118,7 @@ export default function App() {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
+      setLoadingStep(0);
     }
   };
 
@@ -217,7 +233,15 @@ export default function App() {
                 loading || images.length === 0 ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none border-slate-300' : 'bg-orange-500 text-white hover:bg-orange-600'
               }`}
             >
-              {loading ? 'Analyzing...' : 'Start Guard Analysis'}
+              {loading ? (
+                <div className="flex flex-col items-center gap-1">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Analyzing...</span>
+                  </div>
+                  <span className="text-[10px] lowercase font-medium text-white/80">{loadingSteps[loadingStep]}</span>
+                </div>
+              ) : 'Start Guard Analysis'}
             </button>
           </div>
 
