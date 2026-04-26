@@ -98,14 +98,23 @@ export const analyzeFood = async (
   const prompt = mode === 'quick'
     ? buildQuickPrompt(age, gender)
     : buildDetailedPrompt(age, gender, existingMealsCount + 1);
-
   const base64Data = imageData.split(',')[1] || imageData;
 
-  try {
-    // Step 0: connecting
-    onEvent?.({ type: 'step', index: 0, detail: 'Gemini 2.0 Flash 연결 완료' });
+  // Step 0: show immediately on call start
+  onEvent?.({ type: 'step', index: 0, detail: 'Gemini 2.0 Flash 연결 완료' });
 
-    const stream = await ai.models.generateContentStream({
+  // Advance steps with timing while API processes
+  const totalSteps = mode === 'quick' ? 3 : 6;
+  let simStep = 0;
+  const stepTimer = setInterval(() => {
+    if (simStep < totalSteps - 2) {
+      simStep++;
+      onEvent?.({ type: 'step', index: simStep, detail: '' });
+    }
+  }, 1800);
+
+  try {
+    const response = await ai.models.generateContent({
       model: 'gemini-2.0-flash',
       contents: [{
         parts: [
@@ -115,50 +124,27 @@ export const analyzeFood = async (
       }],
     });
 
-    let fullText = '';
-    let detectedStep = 0;
+    const text = response.text || '';
+    const result = parseResult(text, mode);
 
-    for await (const chunk of stream) {
-      const text = chunk.text ?? '';
-      fullText += text;
-
-      // Step 1: food name from heading
-      if (detectedStep < 1) {
-        const nameMatch = fullText.match(/^#\s+(.+?)(?:\s+분석 리포트|\s+퀵 리뷰)/m);
-        if (nameMatch) {
-          detectedStep = 1;
-          onEvent?.({ type: 'step', index: 1, detail: `"${nameMatch[1].trim()}" 감지됨` });
-        }
-      }
-
-      if (mode === 'detailed') {
-        if (detectedStep < 2 && fullText.includes('## 📊')) {
-          detectedStep = 2;
-          onEvent?.({ type: 'step', index: 2, detail: '칼로리 · 탄수화물 · 단백질 · 지방 계산 중' });
-        } else if (detectedStep < 3 && fullText.includes('## 🎯')) {
-          detectedStep = 3;
-          onEvent?.({ type: 'step', index: 3, detail: `${age}세 ${gender === 'male' ? '남성' : '여성'} 기준 평가 작성 중` });
-        } else if (detectedStep < 4 && (fullText.includes('## 🥗') || fullText.includes('## 🏃'))) {
-          detectedStep = 4;
-          onEvent?.({ type: 'step', index: 4, detail: '맞춤 운동 · 페어링 추천 생성 중' });
-        }
-      } else {
-        if (detectedStep < 2 && (fullText.includes('## ⚡') || fullText.includes('---DATA'))) {
-          detectedStep = 2;
-          onEvent?.({ type: 'step', index: 2, detail: '칼로리 · 영양소 수치 산출 중' });
-        }
-      }
+    // Fill in real results for each step
+    onEvent?.({ type: 'step', index: 1, detail: `"${result.foodName}" 감지됨` });
+    if (mode === 'detailed') {
+      onEvent?.({ type: 'step', index: 2, detail: `${result.calories} kcal 산출됨` });
+      onEvent?.({ type: 'step', index: 3, detail: `${age}세 ${gender === 'male' ? '남성' : '여성'} 맞춤 평가 완료` });
+      onEvent?.({ type: 'step', index: 4, detail: '운동 · 페어링 추천 완성' });
+      onEvent?.({ type: 'step', index: 5, detail: '리포트 완성' });
+    } else {
+      onEvent?.({ type: 'step', index: 2, detail: `${result.calories} kcal 산출됨` });
     }
 
-    const lastStep = mode === 'quick' ? 2 : 5;
-    onEvent?.({ type: 'step', index: lastStep, detail: '리포트 완성' });
-
-    const result = parseResult(fullText, mode);
     onEvent?.({ type: 'done', result });
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : '음식 분석 중 오류가 발생했습니다.';
     onEvent?.({ type: 'error', message });
     throw new Error(message);
+  } finally {
+    clearInterval(stepTimer);
   }
 };
