@@ -8,7 +8,27 @@ app.use(express.json({ limit: '20mb' }));
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-const buildPrompt = (age: number, gender: string, mealNumber: number) => `
+const buildQuickPrompt = (age: number, gender: string) => `
+당신은 AI 영양사입니다. 음식 사진을 보고 핵심만 빠르게 분석해주세요. 답변은 간결하게 작성하세요.
+
+# [음식명] 퀵 리뷰
+
+## ⚡ 핵심 수치
+* **칼로리**: [숫자] kcal
+* **탄/단/지**: 탄수화물 [g] / 단백질 [g] / 지방 [g]
+* **주의**: [나트륨 등 주요 주의사항 한 줄]
+
+## ✅ ${age}세 ${gender === 'male' ? '남성' : '여성'} 한줄 평가
+[한 문장으로 이 음식에 대한 평가]
+
+## 💡 바로 실천 팁
+[가장 중요한 실천 팁 한 가지]
+
+마지막 줄에 다음 형식으로 데이터를 포함해주세요 (사용자에게는 절대 보이지 않게):
+---DATA:{"calories": [숫자], "foodName": "[음식명]"}---
+`;
+
+const buildDetailedPrompt = (age: number, gender: string, mealNumber: number) => `
 당신은 최고의 AI 영양사 및 운동 전문가입니다. 제공된 음식 사진을 분석하여 사용자의 나이(${age}세)와 성별(${gender === 'male' ? '남성' : '여성'})에 적격한지 분석해주세요.
 이번이 오늘 ${mealNumber}번째 식사 분석입니다.
 
@@ -39,14 +59,17 @@ const buildPrompt = (age: number, gender: string, mealNumber: number) => `
 
 app.post('/api/analyze', async (req, res) => {
   try {
-    const { imageData, age, gender, existingMealsCount = 0 } = req.body;
+    const { imageData, age, gender, existingMealsCount = 0, mode = 'detailed' } = req.body;
 
     if (!imageData || !age || !gender) {
       res.status(400).json({ error: '필수 데이터가 누락되었습니다.' });
       return;
     }
 
-    const prompt = buildPrompt(age, gender, existingMealsCount + 1);
+    const prompt = mode === 'quick'
+      ? buildQuickPrompt(age, gender)
+      : buildDetailedPrompt(age, gender, existingMealsCount + 1);
+
     const base64Data = imageData.split(',')[1] || imageData;
 
     const response = await ai.models.generateContent({
@@ -76,6 +99,7 @@ app.post('/api/analyze', async (req, res) => {
       foodName: extractedData.foodName,
       calories: extractedData.calories,
       markdown: text.replace(/---DATA:(\{.*\})---/, '').trim(),
+      mode,
     });
   } catch (error) {
     console.error('Gemini Analysis Error:', error);

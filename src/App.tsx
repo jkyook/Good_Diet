@@ -7,7 +7,7 @@ import { useState, useRef, ChangeEvent, useEffect } from 'react';
 import { Camera, Upload, Utensils, AlertCircle, CheckCircle2, RefreshCw, User, Info, Calendar, Plus, Trash2, History, ChevronRight, Zap, Target } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
-import { analyzeFood, AnalysisResult } from './services/geminiService';
+import { analyzeFood, AnalysisResult, AnalysisMode } from './services/geminiService';
 
 type Gender = 'male' | 'female';
 
@@ -21,6 +21,7 @@ export default function App() {
   const [age, setAge] = useState<number>(30);
   const [gender, setGender] = useState<Gender>('male');
   const [loading, setLoading] = useState(false);
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('quick');
   const [history, setHistory] = useState<MealRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedMeal, setSelectedMeal] = useState<MealRecord | null>(null);
@@ -72,14 +73,9 @@ export default function App() {
   };
 
   const [loadingStep, setLoadingStep] = useState(0);
-  const loadingSteps = [
-    "이미지 스캔 중...",
-    "식재료 식별 중...",
-    "영양소 함량 계측 중...",
-    "나이/성별 맞춤 분석 중...",
-    "운동 및 페어링 추천 생성 중...",
-    "최종 리포트 구성 중..."
-  ];
+  const loadingSteps = analysisMode === 'quick'
+    ? ["이미지 스캔 중...", "식재료 식별 중...", "핵심 수치 계산 중..."]
+    : ["이미지 스캔 중...", "식재료 식별 중...", "영양소 함량 계측 중...", "나이/성별 맞춤 분석 중...", "운동 및 페어링 추천 생성 중...", "최종 리포트 구성 중..."];
 
   const startAnalysis = async () => {
     if (images.length === 0) {
@@ -112,7 +108,7 @@ export default function App() {
           const inBatch = results.filter(r => new Date(r.date).toDateString() === sameDateStr).length;
           const existingCount = inHistory + inBatch;
 
-          const analysis = await analyzeFood(base64, age, gender, existingCount);
+          const analysis = await analyzeFood(base64, age, gender, existingCount, analysisMode);
 
           results.push({ ...analysis, id: img.id, image: base64, date: mealDate });
         } finally {
@@ -266,6 +262,27 @@ export default function App() {
               )}
             </AnimatePresence>
 
+            {/* Analysis Mode Toggle */}
+            <div className="mt-8 space-y-2">
+              <label className="text-[10px] font-black uppercase text-slate-500 ml-1">분석 모드</label>
+              <div className="flex border-[3px] border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] overflow-hidden">
+                <button
+                  onClick={() => setAnalysisMode('quick')}
+                  className={`flex-1 py-3 flex flex-col items-center gap-0.5 transition-colors ${analysisMode === 'quick' ? 'bg-slate-900 text-white' : 'bg-white hover:bg-slate-50 text-slate-700'}`}
+                >
+                  <span className="text-sm font-black uppercase">⚡ 퀵 리뷰</span>
+                  <span className={`text-[9px] font-bold uppercase ${analysisMode === 'quick' ? 'text-orange-300' : 'text-slate-400'}`}>핵심 수치만 · 빠름</span>
+                </button>
+                <button
+                  onClick={() => setAnalysisMode('detailed')}
+                  className={`flex-1 py-3 flex flex-col items-center gap-0.5 border-l-[3px] border-slate-900 transition-colors ${analysisMode === 'detailed' ? 'bg-slate-900 text-white' : 'bg-white hover:bg-slate-50 text-slate-700'}`}
+                >
+                  <span className="text-sm font-black uppercase">📋 상세 리뷰</span>
+                  <span className={`text-[9px] font-bold uppercase ${analysisMode === 'detailed' ? 'text-orange-300' : 'text-slate-400'}`}>전체 분석 · 상세</span>
+                </button>
+              </div>
+            </div>
+
             <button
               onClick={startAnalysis}
               disabled={loading || images.length === 0}
@@ -281,7 +298,7 @@ export default function App() {
                   </div>
                   <span className="text-[10px] lowercase font-bold text-white/90 bg-black/10 px-2 py-0.5 rounded tracking-widest">{loadingSteps[loadingStep]}</span>
                 </div>
-              ) : 'Start Guard Analysis'}
+              ) : analysisMode === 'quick' ? '⚡ Quick Analysis' : '📋 Full Analysis'}
               <div className="absolute top-0 -left-full w-full h-full bg-white/20 skew-x-[30deg] group-hover:animate-[shimmer_2s_infinite]" />
             </button>
           </div>
@@ -327,7 +344,12 @@ export default function App() {
                           <img src={meal.image} className="w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-black uppercase truncate group-hover:text-orange-500 transition-colors">{meal.foodName}</p>
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <p className="text-[11px] font-black uppercase truncate group-hover:text-orange-500 transition-colors">{meal.foodName}</p>
+                            <span className={`shrink-0 text-[8px] font-black uppercase px-1 border ${meal.mode === 'quick' ? 'border-amber-500 text-amber-400' : 'border-sky-500 text-sky-400'}`}>
+                              {meal.mode === 'quick' ? '⚡' : '📋'}
+                            </span>
+                          </div>
                           <p className="text-[9px] text-slate-500 uppercase font-bold">{new Date(meal.date).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} • {meal.calories}kcal</p>
                         </div>
                         <button 
@@ -361,8 +383,13 @@ export default function App() {
                 <div className="md:col-span-12 bg-white border-[3px] border-slate-900 shadow-[10px_10px_0px_0px_rgba(15,23,42,1)] relative aspect-video md:aspect-[21/7] overflow-hidden group">
                   <img src={selectedMeal.image} className="w-full h-full object-cover transition-all duration-1000 group-hover:scale-110" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                  <div className="absolute top-6 left-6 bg-slate-900 text-white px-4 py-1 text-xs font-black uppercase tracking-[0.2em] shadow-[4px_4px_0px_0px_rgba(255,107,53,1)]">
-                    Scanned Subject: {selectedMeal.foodName}
+                  <div className="absolute top-6 left-6 flex items-center gap-2">
+                    <div className="bg-slate-900 text-white px-4 py-1 text-xs font-black uppercase tracking-[0.2em] shadow-[4px_4px_0px_0px_rgba(255,107,53,1)]">
+                      Scanned Subject: {selectedMeal.foodName}
+                    </div>
+                    <div className={`px-3 py-1 text-xs font-black uppercase border-2 shadow-[3px_3px_0px_0px_rgba(0,0,0,0.8)] ${selectedMeal.mode === 'quick' ? 'bg-amber-400 border-slate-900 text-slate-900' : 'bg-sky-400 border-slate-900 text-slate-900'}`}>
+                      {selectedMeal.mode === 'quick' ? '⚡ 퀵 리뷰' : '📋 상세 리뷰'}
+                    </div>
                   </div>
                   <div className="absolute bottom-6 right-6 bg-white border-[3px] border-slate-900 p-4 text-center shadow-[6px_6px_0px_0px_rgba(15,23,42,1)]">
                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Caloric Load</p>
