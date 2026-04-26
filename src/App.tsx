@@ -4,10 +4,10 @@
  */
 
 import { useState, useRef, ChangeEvent, useEffect } from 'react';
-import { Camera, Upload, Utensils, AlertCircle, CheckCircle2, RefreshCw, User, Info, Calendar, Plus, Trash2, History, ChevronRight, Zap, Target } from 'lucide-react';
+import { Camera, Upload, Utensils, CheckCircle2, RefreshCw, User, Calendar, Plus, Trash2, History, Zap, Target } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
-import { analyzeFood, AnalysisResult, AnalysisMode } from './services/geminiService';
+import { analyzeFood, AnalysisResult, AnalysisMode, StreamEvent } from './services/geminiService';
 
 type Gender = 'male' | 'female';
 
@@ -25,8 +25,22 @@ export default function App() {
   const [history, setHistory] = useState<MealRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedMeal, setSelectedMeal] = useState<MealRecord | null>(null);
+  const [showProfile, setShowProfile] = useState(false);
+  const [stepDetails, setStepDetails] = useState<Record<number, string>>({});
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showProfile) return;
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setShowProfile(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showProfile]);
 
   // Load history from localStorage
   useEffect(() => {
@@ -97,6 +111,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     setLoadingStep(0);
+    setStepDetails({});
     setCurrentAnalyzingIdx(0);
 
     try {
@@ -105,31 +120,31 @@ export default function App() {
         const img = images[i];
         setCurrentAnalyzingIdx(i);
         setLoadingStep(0);
+        setStepDetails({});
 
-        const stepInterval = setInterval(() => {
-          setLoadingStep(prev => (prev < loadingStepsData.length - 1 ? prev + 1 : prev));
-        }, 1500);
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(img.file);
+        });
+        const base64 = await base64Promise;
 
-        try {
-          const reader = new FileReader();
-          const base64Promise = new Promise<string>((resolve) => {
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(img.file);
-          });
-          const base64 = await base64Promise;
+        const mealDate = new Date(img.file.lastModified).toISOString();
+        const sameDateStr = new Date(mealDate).toDateString();
+        const inHistory = history.filter(h => new Date(h.date).toDateString() === sameDateStr).length;
+        const inBatch = results.filter(r => new Date(r.date).toDateString() === sameDateStr).length;
+        const existingCount = inHistory + inBatch;
 
-          const mealDate = new Date(img.file.lastModified).toISOString();
-          const sameDateStr = new Date(mealDate).toDateString();
-          const inHistory = history.filter(h => new Date(h.date).toDateString() === sameDateStr).length;
-          const inBatch = results.filter(r => new Date(r.date).toDateString() === sameDateStr).length;
-          const existingCount = inHistory + inBatch;
+        const onEvent = (event: StreamEvent) => {
+          if (event.type === 'step') {
+            setLoadingStep(event.index);
+            setStepDetails(prev => ({ ...prev, [event.index]: event.detail }));
+          }
+        };
 
-          const analysis = await analyzeFood(base64, age, gender, existingCount, analysisMode);
+        const analysis = await analyzeFood(base64, age, gender, existingCount, analysisMode, onEvent);
 
-          results.push({ ...analysis, id: img.id, image: base64, date: mealDate });
-        } finally {
-          clearInterval(stepInterval);
-        }
+        results.push({ ...analysis, id: img.id, image: base64, date: mealDate });
       }
       
       setHistory(prev => [...results, ...prev]);
@@ -140,6 +155,7 @@ export default function App() {
     } finally {
       setLoading(false);
       setLoadingStep(0);
+      setStepDetails({});
       setCurrentAnalyzingIdx(-1);
     }
   };
@@ -195,8 +211,53 @@ export default function App() {
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Target Profile</p>
             <p className="font-black text-lg text-slate-900">{gender === 'male' ? '남성' : '여성'}, {age}세</p>
           </div>
-          <div className="w-16 h-16 bg-white border-4 border-slate-900 rounded-3xl flex items-center justify-center text-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] transform hover:scale-105 transition-transform cursor-default">
-            <span className="text-xl font-black">{gender === 'male' ? 'M' : 'F'}{age}</span>
+          <div ref={profileRef} className="relative">
+            <button
+              onClick={() => setShowProfile(p => !p)}
+              className="w-16 h-16 bg-white border-4 border-slate-900 rounded-3xl flex items-center justify-center text-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] hover:scale-105 hover:bg-orange-50 transition-all"
+              title="프로필 설정"
+            >
+              <span className="text-xl font-black">{gender === 'male' ? 'M' : 'F'}{age}</span>
+            </button>
+            <AnimatePresence>
+              {showProfile && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 top-full mt-3 w-64 bg-white border-[3px] border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] p-6 z-50"
+                >
+                  <h4 className="text-[10px] font-black uppercase text-slate-400 mb-5 tracking-widest flex items-center gap-2">
+                    <User className="w-3 h-3" /> Profile Settings
+                  </h4>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase text-slate-500">나이 (Age)</label>
+                      <input
+                        type="number"
+                        value={age}
+                        onChange={e => setAge(Number(e.target.value))}
+                        className="w-full border-[3px] border-slate-900 px-3 py-2 font-black text-lg focus:outline-none focus:bg-orange-50 transition-all shadow-[3px_3px_0px_0px_rgba(15,23,42,1)]"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase text-slate-500">성별 (Gender)</label>
+                      <div className="flex border-[3px] border-slate-900 shadow-[3px_3px_0px_0px_rgba(15,23,42,1)] overflow-hidden">
+                        <button
+                          onClick={() => setGender('male')}
+                          className={`flex-1 py-2 text-sm font-black uppercase transition-colors ${gender === 'male' ? 'bg-slate-900 text-white' : 'bg-white hover:bg-slate-50'}`}
+                        >남성</button>
+                        <button
+                          onClick={() => setGender('female')}
+                          className={`flex-1 py-2 text-sm font-black uppercase border-l-[3px] border-slate-900 transition-colors ${gender === 'female' ? 'bg-slate-900 text-white' : 'bg-white hover:bg-slate-50'}`}
+                        >여성</button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </header>
@@ -206,38 +267,6 @@ export default function App() {
         
         {/* Profile & Input Column (Left) */}
         <div className="md:col-span-4 space-y-8">
-          {/* User Settings Card */}
-          <div className="bg-white border-2 border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] p-8 relative overflow-hidden group">
-            <div className="absolute -right-4 -top-4 w-24 h-24 bg-slate-50 rounded-full opacity-50 group-hover:scale-110 transition-transform duration-500" />
-            <h4 className="text-[10px] font-black uppercase text-slate-400 mb-6 tracking-widest flex items-center gap-2 relative">
-              <User className="w-3 h-3" /> Profile Settings
-            </h4>
-            <div className="space-y-6 relative">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-slate-500 ml-1">나이 (Age)</label>
-                <input 
-                  type="number" 
-                  value={age} 
-                  onChange={e => setAge(Number(e.target.value))}
-                  className="w-full border-[3px] border-slate-900 px-4 py-3 font-black text-xl focus:outline-none focus:bg-orange-50 focus:shadow-none transition-all shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-slate-500 ml-1">성별 (Gender)</label>
-                <div className="flex border-[3px] border-slate-900 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] overflow-hidden">
-                  <button 
-                    onClick={() => setGender('male')}
-                    className={`flex-1 py-3 text-sm font-black uppercase transition-colors ${gender === 'male' ? 'bg-slate-900 text-white' : 'bg-white hover:bg-slate-50'}`}
-                  >남성</button>
-                  <button 
-                    onClick={() => setGender('female')}
-                    className={`flex-1 py-3 text-sm font-black uppercase border-l-[3px] border-slate-900 transition-colors ${gender === 'female' ? 'bg-slate-900 text-white' : 'bg-white hover:bg-slate-50'}`}
-                  >여성</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* Upload Card */}
           <div className="bg-white border-2 border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] p-8">
             <h4 className="text-[10px] font-black uppercase text-slate-400 mb-6 tracking-widest flex items-center gap-2">
@@ -444,11 +473,17 @@ export default function App() {
                             <div className="w-4 h-4 rounded-full border-2 border-slate-300" />
                           )}
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <p className={`text-xs font-black uppercase ${
                             i === loadingStep ? 'text-orange-600' : i < loadingStep ? 'text-emerald-700' : 'text-slate-400'
                           }`}>{step.label}</p>
-                          <p className="text-[10px] font-bold text-slate-500 mt-0.5">{step.desc}</p>
+                          {stepDetails[i] ? (
+                            <p className={`text-[10px] font-bold mt-0.5 truncate ${i < loadingStep ? 'text-emerald-600' : 'text-orange-500'}`}>
+                              {i < loadingStep ? '✓ ' : ''}{stepDetails[i]}
+                            </p>
+                          ) : (
+                            <p className="text-[10px] font-bold text-slate-400 mt-0.5">{step.desc}</p>
+                          )}
                         </div>
                       </div>
                     ))}

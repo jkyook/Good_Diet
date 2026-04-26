@@ -57,22 +57,31 @@ const buildDetailedPrompt = (age: number, gender: string, mealNumber: number) =>
 ---DATA:{"calories": [숫자], "foodName": "[음식명이름]"}---
 `;
 
+const send = (res: express.Response, data: object) => {
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+};
+
 app.post('/api/analyze', async (req, res) => {
+  const { imageData, age, gender, existingMealsCount = 0, mode = 'detailed' } = req.body;
+
+  if (!imageData || !age || !gender) {
+    res.status(400).json({ error: '필수 데이터가 누락되었습니다.' });
+    return;
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
   try {
-    const { imageData, age, gender, existingMealsCount = 0, mode = 'detailed' } = req.body;
-
-    if (!imageData || !age || !gender) {
-      res.status(400).json({ error: '필수 데이터가 누락되었습니다.' });
-      return;
-    }
-
     const prompt = mode === 'quick'
       ? buildQuickPrompt(age, gender)
       : buildDetailedPrompt(age, gender, existingMealsCount + 1);
 
     const base64Data = imageData.split(',')[1] || imageData;
 
-    const response = await ai.models.generateContent({
+    const stream = await ai.models.generateContentStream({
       model: 'gemini-2.0-flash',
       contents: [{
         parts: [
@@ -82,28 +91,69 @@ app.post('/api/analyze', async (req, res) => {
       }],
     });
 
-    const text = response.text || '';
-    const dataMatch = text.match(/---DATA:(\{.*\})---/);
-    let extractedData = { calories: 0, foodName: '알 수 없는 음식' };
+    // Step 0: API connected (stream started)
+    send(res, { type: 'step', index: 0, detail: 'Gemini 2.0 Flash 연결 완료' });
 
-    if (dataMatch) {
-      try {
-        extractedData = JSON.parse(dataMatch[1]);
-      } catch {
-        // keep defaults
+    let fullText = '';
+    let detectedStep = 0;
+
+    for await (const chunk of stream) {
+      const text = chunk.text || '';
+      fullText += text;
+
+      // Step 1: food name detected from heading
+      if (detectedStep < 1) {
+        const nameMatch = fullText.match(/^#\s+(.+?)(?:\s+분석 리포트|\s+퀵 리뷰)/m);
+        if (nameMatch) {
+          detectedStep = 1;
+          send(res, { type: 'step', index: 1, detail: `"${nameMatch[1].trim()}" 감지됨` });
+        }
+      }
+
+      if (mode === 'detailed') {
+        if (detectedStep < 2 && fullText.includes('## 📊')) {
+          detectedStep = 2;
+          send(res, { type: 'step', index: 2, detail: '칼로리 · 탄수화물 · 단백질 · 지방 계산 중' });
+        } else if (detectedStep < 3 && fullText.includes('## 🎯')) {
+          detectedStep = 3;
+          send(res, { type: 'step', index: 3, detail: `${age}세 ${gender === 'male' ? '남성' : '여성'} 기준 평가 작성 중` });
+        } else if (detectedStep < 4 && (fullText.includes('## 🥗') || fullText.includes('## 🏃'))) {
+          detectedStep = 4;
+          send(res, { type: 'step', index: 4, detail: '맞춤 운동 · 페어링 추천 생성 중' });
+        }
+      } else {
+        if (detectedStep < 2 && (fullText.includes('## ⚡') || fullText.includes('---DATA'))) {
+          detectedStep = 2;
+          send(res, { type: 'step', index: 2, detail: '칼로리 · 영양소 수치 산출 중' });
+        }
       }
     }
 
-    res.json({
-      date: new Date().toISOString(),
-      foodName: extractedData.foodName,
-      calories: extractedData.calories,
-      markdown: text.replace(/---DATA:(\{.*\})---/, '').trim(),
-      mode,
+    // Final step: report complete
+    const lastStep = mode === 'quick' ? 2 : 5;
+    send(res, { type: 'step', index: lastStep, detail: '리포트 완성' });
+
+    const dataMatch = fullText.match(/---DATA:(\{.*\})---/);
+    let extractedData = { calories: 0, foodName: '알 수 없는 음식' };
+    if (dataMatch) {
+      try { extractedData = JSON.parse(dataMatch[1]); } catch { /* keep defaults */ }
+    }
+
+    send(res, {
+      type: 'done',
+      result: {
+        date: new Date().toISOString(),
+        foodName: extractedData.foodName,
+        calories: extractedData.calories,
+        markdown: fullText.replace(/---DATA:(\{.*\})---/, '').trim(),
+        mode,
+      },
     });
   } catch (error) {
     console.error('Gemini Analysis Error:', error);
-    res.status(500).json({ error: '음식 분석 중 오류가 발생했습니다.' });
+    send(res, { type: 'error', message: '음식 분석 중 오류가 발생했습니다.' });
+  } finally {
+    res.end();
   }
 });
 
