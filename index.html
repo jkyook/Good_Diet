@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My Google AI Studio App</title>
+    <script>
+      // @google/genai SDK v1.50+ accesses globalThis.process.env internally.
+      // Browsers don't have process, so we shim it before any module loads.
+      if (typeof globalThis.process === 'undefined') {
+        globalThis.process = { env: {}, versions: {} };
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

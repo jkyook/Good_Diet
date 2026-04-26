@@ -329,6 +329,15 @@ export default function App() {
               </div>
             </div>
 
+            {error && (
+              <div className="mt-6 bg-rose-50 border-[3px] border-rose-500 shadow-[3px_3px_0px_0px_rgba(239,68,68,1)] p-4 flex items-start gap-3">
+                <span className="text-rose-500 text-lg shrink-0">⚠</span>
+                <p className="text-rose-700 text-xs font-bold leading-relaxed">
+                  {error.startsWith('{') ? '분석 중 오류가 발생했습니다. API 키 또는 네트워크를 확인해주세요.' : error}
+                </p>
+              </div>
+            )}
+
             <button
               onClick={startAnalysis}
               disabled={loading || images.length === 0}
