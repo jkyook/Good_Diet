@@ -73,9 +73,20 @@ export default function App() {
   };
 
   const [loadingStep, setLoadingStep] = useState(0);
-  const loadingSteps = analysisMode === 'quick'
-    ? ["이미지 스캔 중...", "식재료 식별 중...", "핵심 수치 계산 중..."]
-    : ["이미지 스캔 중...", "식재료 식별 중...", "영양소 함량 계측 중...", "나이/성별 맞춤 분석 중...", "운동 및 페어링 추천 생성 중...", "최종 리포트 구성 중..."];
+  const [currentAnalyzingIdx, setCurrentAnalyzingIdx] = useState(-1);
+
+  const loadingStepsData = analysisMode === 'quick' ? [
+    { label: 'API 연결', desc: 'Gemini AI 서버에 연결 중' },
+    { label: '식재료 식별', desc: '사진에서 음식 및 재료 감지 중' },
+    { label: '핵심 수치 계산', desc: '칼로리 · 영양소 빠르게 산출 중' },
+  ] : [
+    { label: 'API 연결', desc: 'Gemini AI 서버에 연결 중' },
+    { label: '식재료 식별', desc: '사진에서 음식 및 재료 감지 중' },
+    { label: '영양소 계측', desc: '칼로리 · 탄수화물 · 단백질 · 지방 산출 중' },
+    { label: '맞춤 평가', desc: `${age}세 ${gender === 'male' ? '남성' : '여성'} 기준 적합성 분석 중` },
+    { label: '추천 생성', desc: '맞춤 운동 플랜 및 보완 식품 생성 중' },
+    { label: '리포트 완성', desc: '분석 결과 최종 정리 중' },
+  ];
 
   const startAnalysis = async () => {
     if (images.length === 0) {
@@ -86,12 +97,17 @@ export default function App() {
     setLoading(true);
     setError(null);
     setLoadingStep(0);
-    
+    setCurrentAnalyzingIdx(0);
+
     try {
       const results: MealRecord[] = [];
-      for (const img of images) {
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        setCurrentAnalyzingIdx(i);
+        setLoadingStep(0);
+
         const stepInterval = setInterval(() => {
-          setLoadingStep(prev => (prev < loadingSteps.length - 1 ? prev + 1 : prev));
+          setLoadingStep(prev => (prev < loadingStepsData.length - 1 ? prev + 1 : prev));
         }, 1500);
 
         try {
@@ -124,6 +140,7 @@ export default function App() {
     } finally {
       setLoading(false);
       setLoadingStep(0);
+      setCurrentAnalyzingIdx(-1);
     }
   };
 
@@ -291,12 +308,9 @@ export default function App() {
               }`}
             >
               {loading ? (
-                <div className="flex flex-col items-center gap-1">
-                  <div className="flex items-center gap-3">
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                    <span className="tracking-tighter">GUARD ANALYZING...</span>
-                  </div>
-                  <span className="text-[10px] lowercase font-bold text-white/90 bg-black/10 px-2 py-0.5 rounded tracking-widest">{loadingSteps[loadingStep]}</span>
+                <div className="flex items-center justify-center gap-3">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span className="tracking-tighter">분석 중...</span>
                 </div>
               ) : analysisMode === 'quick' ? '⚡ Quick Analysis' : '📋 Full Analysis'}
               <div className="absolute top-0 -left-full w-full h-full bg-white/20 skew-x-[30deg] group-hover:animate-[shimmer_2s_infinite]" />
@@ -370,7 +384,104 @@ export default function App() {
         {/* Dynamic content Column (Right) */}
         <div className="md:col-span-8">
           <AnimatePresence mode="wait">
-            {selectedMeal ? (
+            {loading ? (
+              <motion.div
+                key="loading"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25 }}
+                className="bg-white border-[3px] border-slate-900 shadow-[10px_10px_0px_0px_rgba(15,23,42,1)] overflow-hidden"
+              >
+                {/* Header */}
+                <div className="bg-slate-900 text-white px-8 py-5 flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <RefreshCw className="w-5 h-5 animate-spin text-orange-400" />
+                    <span className="text-sm font-black uppercase tracking-widest">
+                      {analysisMode === 'quick' ? '⚡ 퀵 분석 중' : '📋 상세 분석 중'}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    {images.length > 1 && (
+                      <p className="text-[10px] font-black text-slate-400 uppercase">이미지 {currentAnalyzingIdx + 1} / {images.length}</p>
+                    )}
+                    <p className="text-[10px] font-black text-orange-400 uppercase">
+                      STEP {Math.min(loadingStep + 1, loadingStepsData.length)} / {loadingStepsData.length}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                <div className="h-2 bg-slate-100 border-b-2 border-slate-200">
+                  <motion.div
+                    className="h-full bg-orange-500"
+                    animate={{ width: `${((loadingStep + 1) / loadingStepsData.length) * 100}%` }}
+                    transition={{ duration: 0.6, ease: 'easeOut' }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2">
+                  {/* Steps list */}
+                  <div className="p-8 border-b-2 md:border-b-0 md:border-r-2 border-slate-200 space-y-1">
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-5">분석 단계</p>
+                    {loadingStepsData.map((step, i) => (
+                      <div
+                        key={i}
+                        className={`flex items-start gap-3 p-3 transition-all duration-300 ${
+                          i === loadingStep
+                            ? 'bg-orange-50 border-2 border-orange-400 shadow-[3px_3px_0px_0px_rgba(251,146,60,0.4)]'
+                            : i < loadingStep
+                            ? 'border-2 border-transparent'
+                            : 'border-2 border-transparent opacity-25'
+                        }`}
+                      >
+                        <div className="shrink-0 w-6 h-6 flex items-center justify-center mt-0.5">
+                          {i < loadingStep ? (
+                            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                          ) : i === loadingStep ? (
+                            <RefreshCw className="w-4 h-4 text-orange-500 animate-spin" />
+                          ) : (
+                            <div className="w-4 h-4 rounded-full border-2 border-slate-300" />
+                          )}
+                        </div>
+                        <div>
+                          <p className={`text-xs font-black uppercase ${
+                            i === loadingStep ? 'text-orange-600' : i < loadingStep ? 'text-emerald-700' : 'text-slate-400'
+                          }`}>{step.label}</p>
+                          <p className="text-[10px] font-bold text-slate-500 mt-0.5">{step.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Image preview */}
+                  <div className="p-8 flex flex-col items-center justify-center gap-5 bg-slate-50">
+                    {currentAnalyzingIdx >= 0 && images[currentAnalyzingIdx] ? (
+                      <>
+                        <div className="relative w-full max-w-[260px] aspect-square border-[3px] border-slate-900 shadow-[6px_6px_0px_0px_rgba(15,23,42,1)] overflow-hidden">
+                          <img
+                            src={images[currentAnalyzingIdx].url}
+                            alt="분석 중인 이미지"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-orange-500/10 animate-pulse" />
+                          <div className="absolute bottom-0 left-0 right-0 bg-slate-900/80 py-1.5 text-center">
+                            <span className="text-[9px] font-black uppercase text-orange-400 tracking-widest">SCANNING...</span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">
+                          AI가 음식을 분석하고 있어요
+                          <br />
+                          <span className="text-orange-500">잠시만 기다려주세요</span>
+                        </p>
+                      </>
+                    ) : (
+                      <RefreshCw className="w-10 h-10 text-slate-300 animate-spin" />
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ) : selectedMeal ? (
               <motion.div
                 key={selectedMeal.id}
                 initial={{ opacity: 0, scale: 0.98 }}
