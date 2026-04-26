@@ -44,11 +44,17 @@ export default function App() {
     localStorage.setItem('mealwise_history', JSON.stringify(history));
   }, [history]);
 
+  useEffect(() => {
+    return () => {
+      images.forEach(img => URL.revokeObjectURL(img.url));
+    };
+  }, [images]);
+
   const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length > 0) {
       const newImages = files.map(file => ({
-        id: Math.random().toString(36).substr(2, 9),
+        id: crypto.randomUUID(),
         url: URL.createObjectURL(file),
         file: file
       }));
@@ -58,7 +64,11 @@ export default function App() {
   };
 
   const removeImage = (id: string) => {
-    setImages(prev => prev.filter(img => img.id !== id));
+    setImages(prev => {
+      const target = prev.find(img => img.id === id);
+      if (target) URL.revokeObjectURL(target.url);
+      return prev.filter(img => img.id !== id);
+    });
   };
 
   const [loadingStep, setLoadingStep] = useState(0);
@@ -83,36 +93,35 @@ export default function App() {
     
     try {
       const results: MealRecord[] = [];
-      for (const [index, img] of images.entries()) {
-        // Simple step progression for UI feel
+      for (const img of images) {
         const stepInterval = setInterval(() => {
           setLoadingStep(prev => (prev < loadingSteps.length - 1 ? prev + 1 : prev));
         }, 1500);
 
-        const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(img.file);
-        });
-        const base64 = await base64Promise;
-        
-        const mealDate = new Date(img.file.lastModified).toISOString();
-        const existingCount = history.filter(h => new Date(h.date).toDateString() === new Date(mealDate).toDateString()).length;
-        
-        const analysis = await analyzeFood(base64, age, gender, existingCount);
-        
-        const record: MealRecord = {
-          ...analysis,
-          id: img.id,
-          image: base64,
-          date: mealDate 
-        };
-        results.push(record);
-        clearInterval(stepInterval);
+        try {
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve) => {
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(img.file);
+          });
+          const base64 = await base64Promise;
+
+          const mealDate = new Date(img.file.lastModified).toISOString();
+          const sameDateStr = new Date(mealDate).toDateString();
+          const inHistory = history.filter(h => new Date(h.date).toDateString() === sameDateStr).length;
+          const inBatch = results.filter(r => new Date(r.date).toDateString() === sameDateStr).length;
+          const existingCount = inHistory + inBatch;
+
+          const analysis = await analyzeFood(base64, age, gender, existingCount);
+
+          results.push({ ...analysis, id: img.id, image: base64, date: mealDate });
+        } finally {
+          clearInterval(stepInterval);
+        }
       }
       
       setHistory(prev => [...results, ...prev]);
-      setImages([]);
+      setImages(prev => { prev.forEach(img => URL.revokeObjectURL(img.url)); return []; });
       setSelectedMeal(results[0]);
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
