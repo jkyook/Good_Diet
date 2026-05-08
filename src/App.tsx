@@ -22,6 +22,9 @@ import {
   saveMeal, loadHistory, deleteMeal as dbDeleteMeal, clearHistory as dbClearHistory,
   SupabaseUser, SUPABASE_AVAILABLE,
 } from './services/supabaseService';
+import { addMeal as localAddMeal } from './services/mealStore';
+import BatchAnalyzer from './components/BatchAnalyzer';
+import DayMealLog from './components/DayMealLog';
 
 type Gender = 'male' | 'female';
 type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active';
@@ -423,6 +426,10 @@ export default function App() {
       }
 
       setHistory(prev => [...results, ...prev]);
+      // localStore에도 저장 (오프라인/모바일 대비)
+      for (const r of results) {
+        localAddMeal(r.image, r.mealType, r);
+      }
       if (user) {
         for (const r of results) await saveMeal(r, user.id);
       }
@@ -1048,6 +1055,26 @@ export default function App() {
                         </div>
                       )}
 
+                      {/* 배치 분석 */}
+                      <BatchAnalyzer
+                        age={age}
+                        gender={gender}
+                        provider={provider}
+                        mealType={mealType}
+                        onComplete={results => {
+                          setHistory(prev => [
+                            ...results.map(r => ({
+                              ...r,
+                              id: `batch-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+                              image: '',
+                              mealType,
+                            })),
+                            ...prev,
+                          ]);
+                          showToast(`${results.length}개 일괄 분석 완료!`);
+                        }}
+                      />
+
                       {/* 분석 버튼 */}
                       <button onClick={startAnalysis} disabled={loading || images.length === 0}
                         className={`w-full py-5 text-base font-black uppercase border-[3px] border-slate-900 transition-all ${loading || images.length === 0 ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none border-slate-300' : 'bg-orange-500 text-white shadow-[8px_8px_0_0_rgba(15,23,42,1)] active:shadow-none active:translate-x-2 active:translate-y-2'}`}
@@ -1066,10 +1093,13 @@ export default function App() {
           {/* ════ 기록 탭 ════ */}
           {mainTab === 'history' && (
             <motion.div key="history" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }}
-              className="p-4"
+              className="p-4 space-y-4"
               onClick={() => setActiveItemId(null)}
             >
-              <div className="flex justify-between items-center mb-4">
+              {/* 오늘 식단 요약 (mealStore 기반) */}
+              <DayMealLog dailyCalorieTarget={dailyCalorieTarget} onMealDeleted={() => {}} />
+
+              <div className="flex justify-between items-center mt-2">
                 <p className="text-[10px] font-black uppercase text-slate-500">{history.length} Records</p>
                 <button onClick={e => { e.stopPropagation(); clearHistory(); }}
                   className="text-[9px] font-black uppercase bg-rose-500 text-white px-2 py-1 border-2 border-slate-900 shadow-[2px_2px_0_0_rgba(15,23,42,1)]"

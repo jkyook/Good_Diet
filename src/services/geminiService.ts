@@ -4,10 +4,28 @@ import Anthropic from '@anthropic-ai/sdk';
 export type AnalysisMode = 'quick' | 'detailed';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type AIProvider = 'gemini' | 'claude' | 'groq';
+export type FoodCategory = '고기' | '야채' | '면' | '기타';
+
+export interface FoodCandidate {
+  foodName: string;
+  category: FoodCategory;
+  cookingMethod: string;
+  sauce: string;
+  weightGrams: number;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  confidence: number; // 0~1
+}
 
 export interface AnalysisResult {
   date: string;
   foodName: string;
+  category: FoodCategory;
+  cookingMethod: string;
+  sauce: string;
+  weightGrams: number;
   calories: number;
   protein: number;
   carbs: number;
@@ -16,6 +34,8 @@ export interface AnalysisResult {
   markdown: string;
   mode: AnalysisMode;
   provider: AIProvider;
+  candidates?: FoodCandidate[]; // 불확실할 때 상위 3개
+  isAmbiguous: boolean;
 }
 
 export interface StepEvent {
@@ -45,75 +65,137 @@ const geminiAI = GEMINI_API_KEY
 const claudeAI = ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: ANTHROPIC_API_KEY, dangerouslyAllowBrowser: true }) : null;
 
-// --- 프롬프트 빌더 ---
-const buildQuickPrompt = (age: number, gender: string) => `
-당신은 AI 영양사입니다. 음식 사진을 보고 핵심만 빠르게 분석해주세요. 답변은 간결하게 작성하세요.
+// --- 프롬프트 ---
+// 구조화된 음식 분석: 음식명/카테고리/조리법/소스/무게 포함
+// 불확실할 때는 상위 3개 후보를 JSON 배열로 반환
+const FOOD_ANALYSIS_SYSTEM = `당신은 정밀 음식 분석 AI입니다.
+음식 사진을 보고 아래 JSON 형식으로만 응답하세요. JSON 외 텍스트는 금지입니다.
 
-# [음식명] 퀵 리뷰
+확실한 경우:
+{
+  "isAmbiguous": false,
+  "foodName": "음식명",
+  "category": "고기|야채|면|기타 중 하나",
+  "cookingMethod": "볶음|구이|튀김|찜|날것|기타",
+  "sauce": "소스명 또는 없음",
+  "weightGrams": 숫자,
+  "calories": 숫자,
+  "protein": 숫자,
+  "carbs": 숫자,
+  "fat": 숫자,
+  "mealTip": "한 줄 영양 팁"
+}
 
-## ⚡ 핵심 수치
-* **칼로리**: [숫자] kcal
-* **탄/단/지**: 탄수화물 [g] / 단백질 [g] / 지방 [g]
-* **주의**: [나트륨 등 주요 주의사항 한 줄]
+불확실한 경우(여러 음식이 섞이거나 판별이 어려운 경우):
+{
+  "isAmbiguous": true,
+  "candidates": [
+    {
+      "foodName": "후보1",
+      "category": "고기|야채|면|기타",
+      "cookingMethod": "조리법",
+      "sauce": "소스",
+      "weightGrams": 숫자,
+      "calories": 숫자,
+      "protein": 숫자,
+      "carbs": 숫자,
+      "fat": 숫자,
+      "confidence": 0~1
+    }
+  ]
+}
+candidates는 최대 3개, confidence 내림차순 정렬.`;
 
-## ✅ ${age}세 ${gender === 'male' ? '남성' : '여성'} 한줄 평가
-[한 문장으로 이 음식에 대한 평가]
+const buildQuickPrompt = (age: number, gender: string) =>
+  `사용자: ${age}세 ${gender === 'male' ? '남성' : '여성'}. 이 음식을 분석해주세요.`;
 
-## 💡 바로 실천 팁
-[가장 중요한 실천 팁 한 가지]
+const buildDetailedPrompt = (age: number, gender: string, mealNumber: number) =>
+  `사용자: ${age}세 ${gender === 'male' ? '남성' : '여성'}, 오늘 ${mealNumber}번째 식사. 이 음식을 상세 분석해주세요.`;
 
-마지막 줄에 다음 형식으로 데이터를 포함해주세요 (사용자에게 보이지 않도록):
----DATA:{"calories": [숫자], "foodName": "[음식명]", "protein": [숫자], "carbs": [숫자], "fat": [숫자], "mealTip": "[한 줄 실천 팁]"}---
-`;
+const buildMarkdown = (data: AnalysisResult): string => {
+  if (data.isAmbiguous && data.candidates?.length) {
+    const top = data.candidates[0];
+    return `# 🤔 음식 판별 불확실
 
-const buildDetailedPrompt = (age: number, gender: string, mealNumber: number) => `
-당신은 최고의 AI 영양사 및 운동 전문가입니다. 제공된 음식 사진을 분석하여 사용자의 나이(${age}세)와 성별(${gender === 'male' ? '남성' : '여성'})에 적합한지 분석해주세요.
-이번이 오늘 ${mealNumber}번째 식사 분석입니다.
+## 후보 분석
+${data.candidates.map((c, i) =>
+  `**${i + 1}. ${c.foodName}** (신뢰도: ${Math.round(c.confidence * 100)}%)
+- 카테고리: ${c.category} / 조리법: ${c.cookingMethod} / 소스: ${c.sauce}
+- 무게: ${c.weightGrams}g | 칼로리: ${c.calories}kcal
+- 탄/단/지: ${c.carbs}g / ${c.protein}g / ${c.fat}g`
+).join('\n\n')}
 
-다음 항목들을 포함하여 Markdown 형식으로 작성해주세요:
+> 가장 유력한 후보인 **${top.foodName}** 기준으로 기록됩니다.`;
+  }
 
-# [음식 이름] 분석 리포트
+  return `# ${data.foodName}
 
-## 📊 영양 성분 분석
-* **추정 칼로리**: [숫자] kcal
-* **탄수화물/단백질/지방**: 탄수화물 [g] / 단백질 [g] / 지방 [g]
-* **나트륨 및 기타**: [주의사항]
+## 영양 정보
+- 카테고리: **${data.category}** | 조리법: ${data.cookingMethod} | 소스: ${data.sauce}
+- 무게: **${data.weightGrams}g** | 칼로리: **${data.calories} kcal**
+- 탄수화물: ${data.carbs}g / 단백질: ${data.protein}g / 지방: ${data.fat}g
 
-## 🎯 나이/성별 맞춤 평가
-[${age}세 ${gender === 'male' ? '남성' : '여성'}에게 이 음식이 어떤 영향을 주는지, 권장 섭취량 대비 어떤지 상세 분석]
-
-## 🥗 최고의 푸드 페어링 (곁들이면 좋을 음식)
-[이 식단에 부족한 영양소를 채워주거나 소화를 도울 수 있는 구체적인 음식 2-3가지 추천]
-
-## 🏃 추천 활동 및 운동
-[이 식사의 칼로리를 효과적으로 연소하거나 대사를 돕기 위한 맞춤형 운동 제안. 예: '빠르게 걷기 30분']
-
-## 💡 종합 개선 팁
-[더 건강하게 먹기 위한 실천 가능한 한 줄 팁]
-
-마지막 줄에 다음 형식으로 데이터를 포함해주세요 (사용자에게 보이지 않도록):
----DATA:{"calories": [숫자], "foodName": "[음식명]", "protein": [숫자], "carbs": [숫자], "fat": [숫자], "mealTip": "[한 줄 실천 팁]"}---
-`;
+## 💡 영양 팁
+${data.mealTip}`;
+};
 
 // --- 파싱 ---
-function parseResult(fullText: string, mode: AnalysisMode, provider: AIProvider): AnalysisResult {
-  const dataMatch = fullText.match(/---DATA:(\{.*\})---/);
-  let base = { calories: 0, foodName: '알 수 없는 음식', protein: 0, carbs: 0, fat: 0, mealTip: '' };
-  if (dataMatch) {
-    try { base = { ...base, ...JSON.parse(dataMatch[1]) }; } catch { /* keep defaults */ }
+function parseResult(jsonText: string, mode: AnalysisMode, provider: AIProvider): AnalysisResult {
+  const cleaned = jsonText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+  let raw: Record<string, unknown> = {};
+  try {
+    raw = JSON.parse(cleaned);
+  } catch {
+    // JSON 파싱 실패 시 기본값 사용
+    raw = { isAmbiguous: false, foodName: '알 수 없는 음식', calories: 0 };
   }
-  return {
+
+  const isAmbiguous = !!raw.isAmbiguous;
+
+  if (isAmbiguous && Array.isArray(raw.candidates) && raw.candidates.length > 0) {
+    const candidates = (raw.candidates as FoodCandidate[]).slice(0, 3);
+    const top = candidates[0];
+    const result: AnalysisResult = {
+      date: new Date().toISOString(),
+      foodName: top.foodName,
+      category: top.category ?? '기타',
+      cookingMethod: top.cookingMethod ?? '',
+      sauce: top.sauce ?? '없음',
+      weightGrams: top.weightGrams ?? 0,
+      calories: top.calories ?? 0,
+      protein: top.protein ?? 0,
+      carbs: top.carbs ?? 0,
+      fat: top.fat ?? 0,
+      mealTip: '',
+      markdown: '',
+      mode,
+      provider,
+      candidates,
+      isAmbiguous: true,
+    };
+    result.markdown = buildMarkdown(result);
+    return result;
+  }
+
+  const result: AnalysisResult = {
     date: new Date().toISOString(),
-    foodName: base.foodName,
-    calories: base.calories,
-    protein: base.protein,
-    carbs: base.carbs,
-    fat: base.fat,
-    mealTip: base.mealTip,
-    markdown: fullText.replace(/---DATA:(\{.*\})---/, '').trim(),
+    foodName: (raw.foodName as string) ?? '알 수 없는 음식',
+    category: (raw.category as FoodCategory) ?? '기타',
+    cookingMethod: (raw.cookingMethod as string) ?? '',
+    sauce: (raw.sauce as string) ?? '없음',
+    weightGrams: (raw.weightGrams as number) ?? 0,
+    calories: (raw.calories as number) ?? 0,
+    protein: (raw.protein as number) ?? 0,
+    carbs: (raw.carbs as number) ?? 0,
+    fat: (raw.fat as number) ?? 0,
+    mealTip: (raw.mealTip as string) ?? '',
+    markdown: '',
     mode,
     provider,
+    isAmbiguous: false,
   };
+  result.markdown = buildMarkdown(result);
+  return result;
 }
 
 // --- 할당량/인증 오류 판별 ---
@@ -133,16 +215,20 @@ export function isQuotaError(message: string): boolean {
   );
 }
 
-// --- Gemini 호출 ---
+// --- Gemini 1.5 Flash 호출 ---
 async function callGemini(base64Data: string, prompt: string): Promise<string> {
   const response = await geminiAI!.models.generateContent({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-1.5-flash',
     contents: [{
       parts: [
-        { text: prompt },
+        { text: FOOD_ANALYSIS_SYSTEM + '\n\n' + prompt },
         { inlineData: { mimeType: 'image/jpeg', data: base64Data } },
       ],
     }],
+    config: {
+      temperature: 0.1,
+      maxOutputTokens: 1024,
+    },
   });
   return response.text || '';
 }
@@ -152,7 +238,8 @@ async function callClaude(base64Data: string, prompt: string, mode: AnalysisMode
   const model = mode === 'quick' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6';
   const response = await claudeAI!.messages.create({
     model,
-    max_tokens: mode === 'quick' ? 1024 : 2048,
+    max_tokens: 1024,
+    system: FOOD_ANALYSIS_SYSTEM,
     messages: [{
       role: 'user',
       content: [
@@ -167,7 +254,7 @@ async function callClaude(base64Data: string, prompt: string, mode: AnalysisMode
   return response.content[0].type === 'text' ? response.content[0].text : '';
 }
 
-// --- Groq 호출 (무료 — Llama 4 Scout Vision) ---
+// --- Groq 호출 ---
 async function callGroq(base64Data: string, prompt: string, mode: AnalysisMode): Promise<string> {
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -177,17 +264,20 @@ async function callGroq(base64Data: string, prompt: string, mode: AnalysisMode):
     },
     body: JSON.stringify({
       model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image_url',
-            image_url: { url: `data:image/jpeg;base64,${base64Data}` },
-          },
-          { type: 'text', text: prompt },
-        ],
-      }],
-      max_tokens: mode === 'quick' ? 1024 : 2048,
+      messages: [
+        { role: 'system', content: FOOD_ANALYSIS_SYSTEM },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: `data:image/jpeg;base64,${base64Data}` },
+            },
+            { type: 'text', text: prompt },
+          ],
+        },
+      ],
+      max_tokens: 1024,
       temperature: 0.1,
     }),
   });
@@ -201,7 +291,6 @@ async function callGroq(base64Data: string, prompt: string, mode: AnalysisMode):
   return data.choices?.[0]?.message?.content || '';
 }
 
-// --- 단일 프로바이더 호출 (내부) ---
 async function callProvider(
   provider: AIProvider,
   base64Data: string,
@@ -216,7 +305,7 @@ async function callProvider(
 }
 
 export const PROVIDER_LABELS: Record<AIProvider, string> = {
-  gemini: 'Gemini 2.0 Flash',
+  gemini: 'Gemini 1.5 Flash',
   claude: 'Claude (Haiku/Sonnet)',
   groq:   'Groq Llama 4 Scout',
 };
@@ -227,10 +316,9 @@ export const PROVIDER_AVAILABLE: Record<AIProvider, boolean> = {
   groq:   GROQ_AVAILABLE,
 };
 
-// 폴백 순서 (groq는 항상 마지막 보험)
 export const FALLBACK_ORDER: AIProvider[] = ['gemini', 'claude', 'groq'];
 
-// --- 메인 분석 함수 ---
+// --- 단일 이미지 분석 ---
 export const analyzeFood = async (
   imageData: string,
   age: number,
@@ -253,33 +341,31 @@ export const analyzeFood = async (
 
   onEvent?.({ type: 'step', index: 0, detail: `${PROVIDER_LABELS[provider]} 연결 완료` });
 
-  const totalSteps = mode === 'quick' ? 3 : 6;
+  const totalSteps = mode === 'quick' ? 3 : 5;
   let simStep = 0;
   const stepTimer = setInterval(() => {
     if (simStep < totalSteps - 2) {
       simStep++;
       onEvent?.({ type: 'step', index: simStep, detail: '' });
     }
-  }, 1800);
+  }, 1500);
 
   try {
     const text = await callProvider(provider, base64Data, prompt, mode);
     const result = parseResult(text, mode, provider);
 
     onEvent?.({ type: 'step', index: 1, detail: `"${result.foodName}" 감지됨` });
-    if (mode === 'detailed') {
-      onEvent?.({ type: 'step', index: 2, detail: `${result.calories} kcal 산출됨` });
-      onEvent?.({ type: 'step', index: 3, detail: `${age}세 ${gender === 'male' ? '남성' : '여성'} 맞춤 평가 완료` });
-      onEvent?.({ type: 'step', index: 4, detail: '운동 · 페어링 추천 완성' });
-      onEvent?.({ type: 'step', index: 5, detail: '리포트 완성' });
+    onEvent?.({ type: 'step', index: 2, detail: `${result.calories} kcal | ${result.weightGrams}g 산출됨` });
+    if (!result.isAmbiguous) {
+      onEvent?.({ type: 'step', index: 3, detail: `${result.category} / ${result.cookingMethod} 분류 완료` });
     } else {
-      onEvent?.({ type: 'step', index: 2, detail: `${result.calories} kcal 산출됨` });
+      onEvent?.({ type: 'step', index: 3, detail: `후보 ${result.candidates?.length}개 도출됨` });
     }
 
     onEvent?.({ type: 'done', result });
     return result;
   } catch (error) {
-    console.error(`[FlavorGuard] ${provider} API Error:`, error);
+    console.error(`[머먹지] ${provider} API Error:`, error);
     let message = error instanceof Error ? error.message : String(error);
     try {
       const parsed = JSON.parse(message);
@@ -290,4 +376,31 @@ export const analyzeFood = async (
   } finally {
     clearInterval(stepTimer);
   }
+};
+
+// --- 다중 이미지 일괄 분석 ---
+export const analyzeFoodBatch = async (
+  images: string[],
+  age: number,
+  gender: 'male' | 'female',
+  mode: AnalysisMode = 'quick',
+  provider: AIProvider = 'gemini',
+  onProgress?: (completed: number, total: number, result?: AnalysisResult) => void,
+): Promise<AnalysisResult[]> => {
+  const results: AnalysisResult[] = [];
+
+  for (let i = 0; i < images.length; i++) {
+    try {
+      const result = await analyzeFood(images[i], age, gender, i, mode, provider);
+      results.push(result);
+      onProgress?.(i + 1, images.length, result);
+    } catch (err) {
+      console.error(`[머먹지] 배치 분석 실패 (${i + 1}/${images.length}):`, err);
+      onProgress?.(i + 1, images.length);
+    }
+    // API 레이트 리밋 대비 짧은 간격
+    if (i < images.length - 1) await new Promise(r => setTimeout(r, 300));
+  }
+
+  return results;
 };

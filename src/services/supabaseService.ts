@@ -131,19 +131,25 @@ function toRow(meal: MealRecord, userId: string) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fromRow(row: Record<string, any>): MealRecord {
   return {
-    id:        row.id,
-    date:      row.analyzed_at,
-    foodName:  row.food_name,
-    calories:  row.calories,
-    protein:   row.protein,
-    carbs:     row.carbs,
-    fat:       row.fat,
-    mealTip:   row.meal_tip,
-    markdown:  row.markdown,
-    mode:      row.mode as AnalysisMode,
-    provider:  row.provider as AIProvider,
-    mealType:  row.meal_type as MealType,
-    image:     row.image,
+    id:           row.id,
+    date:         row.analyzed_at,
+    foodName:     row.food_name,
+    calories:     row.calories,
+    protein:      row.protein,
+    carbs:        row.carbs,
+    fat:          row.fat,
+    mealTip:      row.meal_tip,
+    markdown:     row.markdown,
+    mode:         row.mode as AnalysisMode,
+    provider:     row.provider as AIProvider,
+    mealType:     row.meal_type as MealType,
+    image:        row.image,
+    category:     row.category ?? '기타',
+    cookingMethod: row.cooking_method ?? '',
+    sauce:        row.sauce ?? '없음',
+    weightGrams:  row.weight_grams ?? 0,
+    isAmbiguous:  row.is_ambiguous ?? false,
+    candidates:   row.candidates ?? undefined,
   };
 }
 
