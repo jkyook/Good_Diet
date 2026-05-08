@@ -306,9 +306,9 @@ async function callProvider(
 }
 
 export const PROVIDER_LABELS: Record<AIProvider, string> = {
-  gemini: 'Gemini 1.5 Flash',
-  claude: 'Claude Haiku 4.5',
   groq:   'Groq Llama 4 Scout',
+  claude: 'Claude Haiku 4.5',
+  gemini: 'Gemini 1.5 Flash',
 };
 
 export const PROVIDER_AVAILABLE: Record<AIProvider, boolean> = {
@@ -317,7 +317,7 @@ export const PROVIDER_AVAILABLE: Record<AIProvider, boolean> = {
   groq:   GROQ_AVAILABLE,
 };
 
-export const FALLBACK_ORDER: AIProvider[] = ['gemini', 'claude', 'groq'];
+export const FALLBACK_ORDER: AIProvider[] = ['groq', 'claude', 'gemini'];
 
 // --- 단일 이미지 분석 ---
 export const analyzeFood = async (
@@ -326,7 +326,7 @@ export const analyzeFood = async (
   gender: 'male' | 'female',
   existingMealsCount: number = 0,
   mode: AnalysisMode = 'detailed',
-  provider: AIProvider = 'gemini',
+  provider: AIProvider = 'groq',
   onEvent?: (event: StreamEvent) => void,
 ): Promise<AnalysisResult> => {
   if (!PROVIDER_AVAILABLE[provider]) {
@@ -385,7 +385,7 @@ export const analyzeFoodBatch = async (
   age: number,
   gender: 'male' | 'female',
   mode: AnalysisMode = 'quick',
-  provider: AIProvider = 'gemini',
+  provider: AIProvider = 'groq',
   onProgress?: (completed: number, total: number, result?: AnalysisResult) => void,
 ): Promise<AnalysisResult[]> => {
   const results: AnalysisResult[] = [];
