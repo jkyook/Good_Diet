@@ -131,7 +131,7 @@ const FOOD_ANALYSIS_SYSTEM = `당신은 정밀 음식 분석 전문가입니다.
 [Step 5 - 신뢰도 평가]
 각 추정값의 신뢰도(높음/중간/낮음)와 불확실 요인을 명시하세요.
 
-반드시 아래 JSON 형식으로만 최종 출력하세요:
+중요: 사고 과정을 텍스트로 출력하지 마세요. 반드시 아래 JSON 형식으로만 출력하세요. 모든 문자열 값은 한국어로 작성하세요.
 {
   "isAmbiguous": false,
   "detectedFoods": ["음식명1", "음식명2"],
@@ -242,14 +242,44 @@ ${warningsSection}
 ${data.mealTip}`;
 };
 
+// --- JSON 추출 (CoT 사고 과정 텍스트 제거) ---
+function extractJSON(text: string): string {
+  // ```json ... ``` 코드블록 우선 추출
+  const codeBlock = text.match(/```json\s*([\s\S]*?)```/);
+  if (codeBlock) return codeBlock[1].trim();
+
+  // CoT 텍스트 이후 마지막 { } 블록 추출
+  const start = text.lastIndexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start !== -1 && end > start) return text.slice(start, end + 1);
+
+  return text;
+}
+
+// --- mealScore 영문 값 → 한국어 정규화 ---
+const MEAL_SCORE_MAP: Record<string, string> = {
+  good: '양호', great: '양호', excellent: '양호', balanced: '양호',
+  sufficient: '충분', enough: '충분', adequate: '충분',
+  insufficient: '부족', low: '부족', lacking: '부족', poor: '부족',
+  moderate: '적정', normal: '적정', appropriate: '적정', optimal: '적정',
+  high: '과다', excessive: '과다', too_high: '과다', too_much: '과다',
+  unbalanced: '불균형', imbalanced: '불균형',
+};
+
+function normalizeMealScoreVal(val: string): string {
+  if (!val) return '-';
+  const mapped = MEAL_SCORE_MAP[val.toLowerCase().replace(/\s+/g, '_')];
+  return mapped ?? val;
+}
+
 // --- 파싱 ---
 function parseResult(jsonText: string, mode: AnalysisMode, provider: AIProvider): AnalysisResult {
-  const cleaned = jsonText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+  const cleaned = extractJSON(jsonText);
   let raw: Record<string, unknown> = {};
   try {
     raw = JSON.parse(cleaned);
   } catch {
-    raw = { isAmbiguous: false, foodName: '알 수 없는 음식', calories: 0 };
+    raw = { isAmbiguous: false, foodName: '분석 실패', calories: 0 };
   }
 
   const isAmbiguous = !!raw.isAmbiguous;
@@ -315,9 +345,9 @@ function parseResult(jsonText: string, mode: AnalysisMode, provider: AIProvider)
       sodium: totalsRaw.sodium ?? 0,
     } : undefined,
     mealScore: scoreRaw ? {
-      balance: scoreRaw.balance ?? '',
-      proteinSufficiency: scoreRaw.proteinSufficiency ?? '',
-      vegetableRatio: scoreRaw.vegetableRatio ?? '',
+      balance: normalizeMealScoreVal(scoreRaw.balance ?? ''),
+      proteinSufficiency: normalizeMealScoreVal(scoreRaw.proteinSufficiency ?? ''),
+      vegetableRatio: normalizeMealScoreVal(scoreRaw.vegetableRatio ?? ''),
     } : undefined,
     improvements: Array.isArray(raw.improvements) ? raw.improvements as string[] : undefined,
     warnings: Array.isArray(raw.warnings) ? raw.warnings as string[] : undefined,
