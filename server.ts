@@ -1,9 +1,14 @@
 import express from 'express';
+import cors from 'cors';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
+app.use(cors({
+  origin: ['http://localhost:3000', 'capacitor://localhost', 'ionic://localhost', 'http://localhost'],
+  credentials: true,
+}));
 app.use(express.json({ limit: '20mb' }));
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });

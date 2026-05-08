@@ -1,4 +1,5 @@
 import { Camera, CameraResultType, CameraSource, GalleryPhoto } from '@capacitor/camera';
+import { Filesystem } from '@capacitor/filesystem';
 
 export interface PickedImage {
   dataUrl: string;     // base64 data URL
@@ -60,7 +61,12 @@ export async function pickMultipleFromGallery(): Promise<PickedImage[]> {
 }
 
 async function galleryPhotoToDataUrl(photo: GalleryPhoto): Promise<string> {
-  // 웹 환경에서는 fetch로 변환, 네이티브에서는 Filesystem 사용
+  // 네이티브: Filesystem으로 직접 읽기 (fetch는 네이티브 파일 URI에서 실패)
+  if (photo.path) {
+    const file = await Filesystem.readFile({ path: photo.path });
+    return `data:image/jpeg;base64,${file.data}`;
+  }
+  // 웹 fallback: fetch → FileReader
   if (photo.webPath) {
     const res = await fetch(photo.webPath);
     const blob = await res.blob();
