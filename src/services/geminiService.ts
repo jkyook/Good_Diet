@@ -234,8 +234,9 @@ async function callGemini(base64Data: string, prompt: string): Promise<string> {
 }
 
 // --- Claude 호출 ---
-async function callClaude(base64Data: string, prompt: string, mode: AnalysisMode): Promise<string> {
-  const model = mode === 'quick' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6';
+// 경량 모델 우선 정책 — Sonnet 미사용
+async function callClaude(base64Data: string, prompt: string, _mode: AnalysisMode): Promise<string> {
+  const model = 'claude-haiku-4-5-20251001';
   const response = await claudeAI!.messages.create({
     model,
     max_tokens: 1024,
@@ -306,7 +307,7 @@ async function callProvider(
 
 export const PROVIDER_LABELS: Record<AIProvider, string> = {
   gemini: 'Gemini 1.5 Flash',
-  claude: 'Claude (Haiku/Sonnet)',
+  claude: 'Claude Haiku 4.5',
   groq:   'Groq Llama 4 Scout',
 };
 

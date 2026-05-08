@@ -1,3 +1,6 @@
+// [법무 검토 항목] 포인트→쿠폰 교환 기능은 Apple App Store Section 3.1.1/3.2.2 검토 필요.
+// 외부 결제 연동 없이 파트너 쿠폰 코드 전달 방식으로 구현할 것.
+// iOS 출시 전 법무 검토 항목으로 지정.
 import { Camera, CameraResultType, CameraSource, GalleryPhoto } from '@capacitor/camera';
 import { Filesystem } from '@capacitor/filesystem';
 
