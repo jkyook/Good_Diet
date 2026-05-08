@@ -6,6 +6,40 @@ export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type AIProvider = 'gemini' | 'claude' | 'groq';
 export type FoodCategory = '고기' | '야채' | '면' | '기타';
 
+// --- 확장 인터페이스 ---
+
+export interface IngredientDetail {
+  name: string;
+  parentFood: string;
+  ratio: number;       // %
+  weightGrams: number;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}
+
+export interface PortionEstimate {
+  method: string;
+  referenceObject: string;
+  totalWeightGrams: number;
+  confidence: '높음' | '중간' | '낮음';
+}
+
+export interface NutritionTotals {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  sodium: number;
+}
+
+export interface MealScore {
+  balance: string;
+  proteinSufficiency: string;
+  vegetableRatio: string;
+}
+
 export interface FoodCandidate {
   foodName: string;
   category: FoodCategory;
@@ -16,7 +50,7 @@ export interface FoodCandidate {
   protein: number;
   carbs: number;
   fat: number;
-  confidence: number; // 0~1
+  confidence: number;
 }
 
 export interface AnalysisResult {
@@ -34,8 +68,17 @@ export interface AnalysisResult {
   markdown: string;
   mode: AnalysisMode;
   provider: AIProvider;
-  candidates?: FoodCandidate[]; // 불확실할 때 상위 3개
+  candidates?: FoodCandidate[];
   isAmbiguous: boolean;
+  // CoT 확장 필드
+  detectedFoods?: string[];
+  ingredients?: IngredientDetail[];
+  portionEstimate?: PortionEstimate;
+  totals?: NutritionTotals;
+  mealScore?: MealScore;
+  improvements?: string[];
+  warnings?: string[];
+  confidence?: '높음' | '중간' | '낮음';
 }
 
 export interface StepEvent {
@@ -54,9 +97,9 @@ const GEMINI_API_KEY    = process.env.GEMINI_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const GROQ_API_KEY      = process.env.GROQ_API_KEY;
 
-export const GEMINI_AVAILABLE    = !!GEMINI_API_KEY;
-export const CLAUDE_AVAILABLE    = !!ANTHROPIC_API_KEY;
-export const GROQ_AVAILABLE      = !!GROQ_API_KEY;
+export const GEMINI_AVAILABLE = !!GEMINI_API_KEY;
+export const CLAUDE_AVAILABLE = !!ANTHROPIC_API_KEY;
+export const GROQ_AVAILABLE   = !!GROQ_API_KEY;
 
 // --- 클라이언트 ---
 const geminiAI = GEMINI_API_KEY
@@ -65,46 +108,74 @@ const geminiAI = GEMINI_API_KEY
 const claudeAI = ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: ANTHROPIC_API_KEY, dangerouslyAllowBrowser: true }) : null;
 
-// --- 프롬프트 ---
-// 구조화된 음식 분석: 음식명/카테고리/조리법/소스/무게 포함
-// 불확실할 때는 상위 3개 후보를 JSON 배열로 반환
-const FOOD_ANALYSIS_SYSTEM = `당신은 정밀 음식 분석 AI입니다.
-음식 사진을 보고 아래 JSON 형식으로만 응답하세요. JSON 외 텍스트는 금지입니다.
+// --- CoT 5단계 프롬프트 ---
+const FOOD_ANALYSIS_SYSTEM = `당신은 정밀 음식 분석 전문가입니다. 아래 5단계로 순서대로 분석하세요.
 
-확실한 경우:
+[한국 표준 용기 기준]
+- 밥공기: 210g | 국그릇: 350ml | 뚝배기: 400ml
+- 반찬 소접시: 50~80g | 라면 그릇: 550ml | 식판 1칸: 100~150g
+
+[Step 1 - 음식 감지]
+사진에 있는 모든 음식 항목을 나열하세요.
+
+[Step 2 - 재료 분석]
+각 음식의 주재료, 조리법, 소스, 재료별 비율(%)을 추정하세요.
+
+[Step 3 - 양 추정]
+위 표준 용기 기준과 사진의 그릇/참조물을 보고 각 음식의 총량(g)을 추정하세요.
+추정 근거(어떤 용기 기준인지)를 명시하세요.
+
+[Step 4 - 영양 계산]
+재료별 무게(총량 × 비율) × 100g당 영양소로 합산 계산하세요.
+
+[Step 5 - 신뢰도 평가]
+각 추정값의 신뢰도(높음/중간/낮음)와 불확실 요인을 명시하세요.
+
+반드시 아래 JSON 형식으로만 최종 출력하세요:
 {
   "isAmbiguous": false,
-  "foodName": "음식명",
-  "category": "고기|야채|면|기타 중 하나",
-  "cookingMethod": "볶음|구이|튀김|찜|날것|기타",
-  "sauce": "소스명 또는 없음",
-  "weightGrams": 숫자,
-  "calories": 숫자,
-  "protein": 숫자,
-  "carbs": 숫자,
-  "fat": 숫자,
-  "mealTip": "한 줄 영양 팁"
-}
-
-불확실한 경우(여러 음식이 섞이거나 판별이 어려운 경우):
-{
-  "isAmbiguous": true,
-  "candidates": [
+  "detectedFoods": ["음식명1", "음식명2"],
+  "ingredients": [
     {
-      "foodName": "후보1",
-      "category": "고기|야채|면|기타",
-      "cookingMethod": "조리법",
-      "sauce": "소스",
-      "weightGrams": 숫자,
-      "calories": 숫자,
-      "protein": 숫자,
-      "carbs": 숫자,
-      "fat": 숫자,
-      "confidence": 0~1
+      "name": "재료명",
+      "parentFood": "속한 음식명",
+      "ratio": 40,
+      "weightGrams": 84,
+      "calories": 120,
+      "protein": 5,
+      "carbs": 18,
+      "fat": 3
     }
-  ]
-}
-candidates는 최대 3개, confidence 내림차순 정렬.`;
+  ],
+  "portionEstimate": {
+    "method": "밥공기 기준",
+    "referenceObject": "밥공기(210g)",
+    "totalWeightGrams": 520,
+    "confidence": "중간"
+  },
+  "totals": {
+    "calories": 0,
+    "protein": 0,
+    "carbs": 0,
+    "fat": 0,
+    "sodium": 0
+  },
+  "mealScore": {
+    "balance": "양호",
+    "proteinSufficiency": "부족",
+    "vegetableRatio": "적정"
+  },
+  "improvements": ["개선 제안 1", "개선 제안 2"],
+  "warnings": ["주의사항"],
+  "confidence": "중간",
+  "foodName": "대표 음식명",
+  "category": "고기|야채|면|기타",
+  "cookingMethod": "조리법",
+  "sauce": "소스",
+  "weightGrams": 520,
+  "mealTip": "한 줄 팁",
+  "markdown": ""
+}`;
 
 const buildQuickPrompt = (age: number, gender: string) =>
   `사용자: ${age}세 ${gender === 'male' ? '남성' : '여성'}. 이 음식을 분석해주세요.`;
@@ -112,6 +183,7 @@ const buildQuickPrompt = (age: number, gender: string) =>
 const buildDetailedPrompt = (age: number, gender: string, mealNumber: number) =>
   `사용자: ${age}세 ${gender === 'male' ? '남성' : '여성'}, 오늘 ${mealNumber}번째 식사. 이 음식을 상세 분석해주세요.`;
 
+// --- 마크다운 생성 ---
 const buildMarkdown = (data: AnalysisResult): string => {
   if (data.isAmbiguous && data.candidates?.length) {
     const top = data.candidates[0];
@@ -128,12 +200,43 @@ ${data.candidates.map((c, i) =>
 > 가장 유력한 후보인 **${top.foodName}** 기준으로 기록됩니다.`;
   }
 
+  const foods = data.detectedFoods?.length
+    ? `\n**감지된 음식**: ${data.detectedFoods.join(', ')}`
+    : '';
+
+  const ingredientsTable = data.ingredients?.length ? `
+## 재료별 분석
+| 재료 | 속한 음식 | 무게 | 칼로리 | 탄/단/지 |
+|------|---------|------|-------|---------|
+${data.ingredients.map(i =>
+  `| ${i.name} | ${i.parentFood} | ${i.weightGrams}g | ${i.calories}kcal | ${i.carbs}/${i.protein}/${i.fat}g |`
+).join('\n')}` : '';
+
+  const scoreSection = data.mealScore ? `
+## 식사 평가
+- 균형: **${data.mealScore.balance}**
+- 단백질: **${data.mealScore.proteinSufficiency}**
+- 채소 비율: **${data.mealScore.vegetableRatio}**` : '';
+
+  const improvementsSection = data.improvements?.length
+    ? `\n## 개선 제안\n${data.improvements.map(i => `- ${i}`).join('\n')}`
+    : '';
+
+  const warningsSection = data.warnings?.length
+    ? `\n## ⚠️ 주의사항\n${data.warnings.map(w => `- ${w}`).join('\n')}`
+    : '';
+
   return `# ${data.foodName}
+${foods}
 
 ## 영양 정보
 - 카테고리: **${data.category}** | 조리법: ${data.cookingMethod} | 소스: ${data.sauce}
 - 무게: **${data.weightGrams}g** | 칼로리: **${data.calories} kcal**
-- 탄수화물: ${data.carbs}g / 단백질: ${data.protein}g / 지방: ${data.fat}g
+- 탄수화물: ${data.carbs}g / 단백질: ${data.protein}g / 지방: ${data.fat}g${data.totals?.sodium ? ` / 나트륨: ${data.totals.sodium}mg` : ''}
+${ingredientsTable}
+${scoreSection}
+${improvementsSection}
+${warningsSection}
 
 ## 💡 영양 팁
 ${data.mealTip}`;
@@ -146,7 +249,6 @@ function parseResult(jsonText: string, mode: AnalysisMode, provider: AIProvider)
   try {
     raw = JSON.parse(cleaned);
   } catch {
-    // JSON 파싱 실패 시 기본값 사용
     raw = { isAmbiguous: false, foodName: '알 수 없는 음식', calories: 0 };
   }
 
@@ -177,22 +279,49 @@ function parseResult(jsonText: string, mode: AnalysisMode, provider: AIProvider)
     return result;
   }
 
+  const totalsRaw = raw.totals as Record<string, number> | undefined;
+  const portionRaw = raw.portionEstimate as Record<string, unknown> | undefined;
+  const scoreRaw = raw.mealScore as Record<string, string> | undefined;
+
   const result: AnalysisResult = {
     date: new Date().toISOString(),
     foodName: (raw.foodName as string) ?? '알 수 없는 음식',
     category: (raw.category as FoodCategory) ?? '기타',
     cookingMethod: (raw.cookingMethod as string) ?? '',
     sauce: (raw.sauce as string) ?? '없음',
-    weightGrams: (raw.weightGrams as number) ?? 0,
-    calories: (raw.calories as number) ?? 0,
-    protein: (raw.protein as number) ?? 0,
-    carbs: (raw.carbs as number) ?? 0,
-    fat: (raw.fat as number) ?? 0,
+    weightGrams: (raw.weightGrams as number) ?? portionRaw?.totalWeightGrams as number ?? 0,
+    calories: totalsRaw?.calories ?? (raw.calories as number) ?? 0,
+    protein: totalsRaw?.protein ?? (raw.protein as number) ?? 0,
+    carbs: totalsRaw?.carbs ?? (raw.carbs as number) ?? 0,
+    fat: totalsRaw?.fat ?? (raw.fat as number) ?? 0,
     mealTip: (raw.mealTip as string) ?? '',
     markdown: '',
     mode,
     provider,
     isAmbiguous: false,
+    detectedFoods: Array.isArray(raw.detectedFoods) ? raw.detectedFoods as string[] : undefined,
+    ingredients: Array.isArray(raw.ingredients) ? raw.ingredients as IngredientDetail[] : undefined,
+    portionEstimate: portionRaw ? {
+      method: portionRaw.method as string ?? '',
+      referenceObject: portionRaw.referenceObject as string ?? '',
+      totalWeightGrams: portionRaw.totalWeightGrams as number ?? 0,
+      confidence: portionRaw.confidence as '높음' | '중간' | '낮음' ?? '중간',
+    } : undefined,
+    totals: totalsRaw ? {
+      calories: totalsRaw.calories ?? 0,
+      protein: totalsRaw.protein ?? 0,
+      carbs: totalsRaw.carbs ?? 0,
+      fat: totalsRaw.fat ?? 0,
+      sodium: totalsRaw.sodium ?? 0,
+    } : undefined,
+    mealScore: scoreRaw ? {
+      balance: scoreRaw.balance ?? '',
+      proteinSufficiency: scoreRaw.proteinSufficiency ?? '',
+      vegetableRatio: scoreRaw.vegetableRatio ?? '',
+    } : undefined,
+    improvements: Array.isArray(raw.improvements) ? raw.improvements as string[] : undefined,
+    warnings: Array.isArray(raw.warnings) ? raw.warnings as string[] : undefined,
+    confidence: raw.confidence as '높음' | '중간' | '낮음' | undefined,
   };
   result.markdown = buildMarkdown(result);
   return result;
@@ -227,7 +356,7 @@ async function callGemini(base64Data: string, prompt: string): Promise<string> {
     }],
     config: {
       temperature: 0.1,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 2048,
     },
   });
   return response.text || '';
@@ -239,7 +368,7 @@ async function callClaude(base64Data: string, prompt: string, _mode: AnalysisMod
   const model = 'claude-haiku-4-5-20251001';
   const response = await claudeAI!.messages.create({
     model,
-    max_tokens: 1024,
+    max_tokens: 2048,
     system: FOOD_ANALYSIS_SYSTEM,
     messages: [{
       role: 'user',
@@ -278,7 +407,7 @@ async function callGroq(base64Data: string, prompt: string, mode: AnalysisMode):
           ],
         },
       ],
-      max_tokens: 1024,
+      max_tokens: mode === 'quick' ? 1536 : 2048,
       temperature: 0.1,
     }),
   });
@@ -342,12 +471,13 @@ export const analyzeFood = async (
 
   onEvent?.({ type: 'step', index: 0, detail: `${PROVIDER_LABELS[provider]} 연결 완료` });
 
-  const totalSteps = mode === 'quick' ? 3 : 5;
+  const totalSteps = 5;
   let simStep = 0;
+  const stepLabels = ['음식 감지 중', '재료 분석 중', '양 추정 중', '영양 계산 중'];
   const stepTimer = setInterval(() => {
     if (simStep < totalSteps - 2) {
       simStep++;
-      onEvent?.({ type: 'step', index: simStep, detail: '' });
+      onEvent?.({ type: 'step', index: simStep, detail: stepLabels[simStep - 1] ?? '' });
     }
   }, 1500);
 
@@ -357,11 +487,8 @@ export const analyzeFood = async (
 
     onEvent?.({ type: 'step', index: 1, detail: `"${result.foodName}" 감지됨` });
     onEvent?.({ type: 'step', index: 2, detail: `${result.calories} kcal | ${result.weightGrams}g 산출됨` });
-    if (!result.isAmbiguous) {
-      onEvent?.({ type: 'step', index: 3, detail: `${result.category} / ${result.cookingMethod} 분류 완료` });
-    } else {
-      onEvent?.({ type: 'step', index: 3, detail: `후보 ${result.candidates?.length}개 도출됨` });
-    }
+    onEvent?.({ type: 'step', index: 3, detail: result.portionEstimate ? `${result.portionEstimate.referenceObject} 기준 추정` : '분류 완료' });
+    onEvent?.({ type: 'step', index: 4, detail: `신뢰도: ${result.confidence ?? '중간'}` });
 
     onEvent?.({ type: 'done', result });
     return result;

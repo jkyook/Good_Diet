@@ -25,6 +25,7 @@ import {
 import { addMeal as localAddMeal } from './services/mealStore';
 import BatchAnalyzer from './components/BatchAnalyzer';
 import DayMealLog from './components/DayMealLog';
+import AnalysisResultCard from './components/AnalysisResultCard';
 
 type Gender = 'male' | 'female';
 type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active';
@@ -854,91 +855,13 @@ export default function App() {
                   </motion.div>
 
                 ) : selectedMeal ? (
-                  <motion.div key={selectedMeal.id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                    {/* 히어로 이미지 */}
-                    <div className="relative aspect-video border-[3px] border-slate-900 shadow-[8px_8px_0_0_rgba(15,23,42,1)] overflow-hidden">
-                      <img src={selectedMeal.image} className="w-full h-full object-cover" alt={selectedMeal.foodName} />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                      <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap max-w-[calc(100%-5rem)]">
-                        <div className="bg-slate-900 text-white px-3 py-1 text-[10px] font-black uppercase shadow-[3px_3px_0_0_rgba(255,107,53,1)] truncate max-w-full">
-                          {MEAL_TYPES.find(t => t.value === selectedMeal.mealType)?.emoji} {selectedMeal.foodName}
-                        </div>
-                        <div className={`px-2 py-1 text-[9px] font-black uppercase border-2 ${selectedMeal.mode === 'quick' ? 'bg-amber-400 border-slate-900 text-slate-900' : 'bg-sky-400 border-slate-900 text-slate-900'}`}>
-                          {selectedMeal.mode === 'quick' ? '⚡' : '📋'}
-                        </div>
-                      </div>
-                      <div className="absolute bottom-3 right-3 bg-white border-[3px] border-slate-900 p-2 text-center shadow-[4px_4px_0_0_rgba(15,23,42,1)]">
-                        <p className="text-[8px] font-black uppercase text-slate-400">Calories</p>
-                        <p className="text-xl font-black text-slate-900 leading-none">{selectedMeal.calories} <span className="text-xs">KCAL</span></p>
-                      </div>
-                    </div>
-
-                    {/* 매크로 */}
-                    {(selectedMeal.protein > 0 || selectedMeal.carbs > 0 || selectedMeal.fat > 0) && (
-                      <div className="bg-white border-[3px] border-slate-900 shadow-[6px_6px_0_0_rgba(15,23,42,1)] p-5">
-                        <h4 className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest">Macros</h4>
-                        {[
-                          { label: '탄수화물', value: selectedMeal.carbs, color: 'bg-amber-400', textColor: 'text-amber-700', border: 'border-amber-500' },
-                          { label: '단백질', value: selectedMeal.protein, color: 'bg-sky-400', textColor: 'text-sky-700', border: 'border-sky-500' },
-                          { label: '지방', value: selectedMeal.fat, color: 'bg-rose-400', textColor: 'text-rose-700', border: 'border-rose-400' },
-                        ].map(({ label, value, color, textColor, border }) => {
-                          const total = (selectedMeal.carbs||0)+(selectedMeal.protein||0)+(selectedMeal.fat||0);
-                          const pct = total > 0 ? Math.round(((value||0)/total)*100) : 0;
-                          return (
-                            <div key={label} className="mb-3">
-                              <div className="flex justify-between mb-1">
-                                <span className={`text-[10px] font-black uppercase ${textColor}`}>{label}</span>
-                                <span className="text-[10px] font-black text-slate-500">{value||0}g · {pct}%</span>
-                              </div>
-                              <div className={`h-2.5 bg-slate-100 border-2 ${border}`}>
-                                <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.8 }} className={`h-full ${color}`} />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Daily Progress */}
-                    <div className="bg-emerald-50 border-[3px] border-slate-900 shadow-[6px_6px_0_0_rgba(15,23,42,1)] p-5">
-                      <div className="flex justify-between items-center mb-3">
-                        <div className="bg-emerald-500 text-white px-3 py-1 text-[9px] font-black uppercase shadow-[2px_2px_0_0_rgba(15,23,42,1)]">Daily Target</div>
-                        <Target className="text-emerald-600 w-5 h-5 stroke-[3px]" />
-                      </div>
-                      <div className="flex justify-between items-end mb-2">
-                        <p className="text-2xl font-black">{getDailyStats(selectedMeal.date).calories.toLocaleString()}<span className="text-sm opacity-30">/{dailyCalorieTarget.toLocaleString()}</span></p>
-                        <p className={`text-[10px] font-black uppercase ${getDailyStats(selectedMeal.date).calories > dailyCalorieTarget ? 'text-rose-600' : 'text-emerald-600'}`}>
-                          {Math.round((getDailyStats(selectedMeal.date).calories / dailyCalorieTarget) * 100)}%
-                        </p>
-                      </div>
-                      <div className="h-3 bg-white border-[3px] border-slate-900 overflow-hidden p-0.5">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(100,(getDailyStats(selectedMeal.date).calories/dailyCalorieTarget)*100)}%` }}
-                          transition={{ duration: 1 }}
-                          className={`h-full ${getDailyStats(selectedMeal.date).calories > dailyCalorieTarget ? 'bg-rose-500' : 'bg-emerald-500'}`}
-                        />
-                      </div>
-                    </div>
-
-                    {/* AI Insight */}
-                    <div className="bg-orange-50 border-[3px] border-slate-900 shadow-[6px_6px_0_0_rgba(15,23,42,1)] p-5">
-                      <h4 className="text-[10px] font-black uppercase text-slate-400 mb-3 flex items-center gap-2">
-                        <Zap className="w-4 h-4 text-orange-500 fill-orange-500" /> AI Insight
-                      </h4>
-                      <p className="text-sm font-bold text-slate-800 leading-relaxed">{selectedMeal.mealTip || '팁을 추출하지 못했습니다.'}</p>
-                    </div>
-
-                    {/* Markdown */}
-                    <div className="bg-white border-[3px] border-slate-900 shadow-[6px_6px_0_0_rgba(15,23,42,1)] p-5">
-                      <div className="prose prose-slate max-w-none prose-sm custom-prose">
-                        <ReactMarkdown>{selectedMeal.markdown}</ReactMarkdown>
-                      </div>
-                    </div>
-
-                    <button onClick={() => setSelectedMeal(null)}
-                      className="w-full bg-slate-900 text-white py-4 text-sm font-black uppercase border-[3px] border-slate-900 shadow-[6px_6px_0_0_rgba(15,23,42,1)] active:shadow-none active:translate-x-1.5 active:translate-y-1.5 transition-all"
-                    >← 분석 화면으로</button>
+                  <motion.div key={selectedMeal.id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+                    <AnalysisResultCard
+                      meal={selectedMeal}
+                      dailyCalorieTarget={dailyCalorieTarget}
+                      dailyCalorieConsumed={getDailyStats(selectedMeal.date).calories}
+                      onBack={() => setSelectedMeal(null)}
+                    />
                   </motion.div>
 
                 ) : (
