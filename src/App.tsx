@@ -6,7 +6,7 @@
 import { useState, useRef, ChangeEvent, useEffect, useMemo } from 'react';
 import React from 'react';
 import {
-  Camera, Upload, Utensils, CheckCircle2, RefreshCw, User, Calendar,
+  Camera, Upload, Utensils, RefreshCw, User, Calendar,
   Plus, Trash2, History, Zap, Target, TrendingUp, Download, RotateCcw,
   Home, ChevronDown,
 } from 'lucide-react';
@@ -25,6 +25,8 @@ import { addMeal as localAddMeal } from './services/mealStore';
 import BatchAnalyzer from './components/BatchAnalyzer';
 import DayMealLog from './components/DayMealLog';
 import AnalysisResultCard from './components/AnalysisResultCard';
+import AnalysisProgress from './components/AnalysisProgress';
+import type { AnalysisStep } from './components/AnalysisProgress.types';
 
 type Gender = 'male' | 'female';
 type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active';
@@ -144,17 +146,17 @@ export default function App() {
     [gender, weight, height, age, activityLevel],
   );
 
-  const loadingStepsData = useMemo(() => analysisMode === 'quick' ? [
-    { label: 'API 연결',    desc: 'Gemini AI 서버에 연결 중' },
-    { label: '식재료 식별', desc: '사진에서 음식 및 재료 감지 중' },
-    { label: '수치 계산',  desc: '칼로리 · 영양소 빠르게 산출 중' },
+  // 서버 SSE 가 emit 하는 step index 와 1:1 대응 (analyze.ts 참조)
+  const loadingStepsData: AnalysisStep[] = useMemo(() => analysisMode === 'quick' ? [
+    { label: 'API 연결',     description: 'AI 서버 연결 중' },
+    { label: '식재료 식별',  description: '음식 및 재료 감지' },
+    { label: '수치 계산',    description: '칼로리 · 영양소 산출' },
   ] : [
-    { label: 'API 연결',    desc: 'Gemini AI 서버에 연결 중' },
-    { label: '식재료 식별', desc: '사진에서 음식 및 재료 감지 중' },
-    { label: '영양소 계측', desc: '칼로리 · 탄수화물 · 단백질 · 지방 산출 중' },
-    { label: '맞춤 평가',  desc: `${age}세 ${gender === 'male' ? '남성' : '여성'} 기준 분석 중` },
-    { label: '추천 생성',  desc: '운동 플랜 및 푸드 페어링 생성 중' },
-    { label: '리포트 완성', desc: '분석 결과 최종 정리 중' },
+    { label: 'API 연결',     description: 'AI 서버 연결 중' },
+    { label: '식재료 식별',  description: '음식 및 재료 감지' },
+    { label: '양 추정',      description: '용기 기준 무게 추정' },
+    { label: '영양소 계측',  description: `${age}세 ${gender === 'male' ? '남성' : '여성'} 기준 분석` },
+    { label: '신뢰도 평가',  description: '결과 정합성 검증' },
   ], [analysisMode, age, gender]);
 
   const groupedHistory = useMemo(() => history.reduce((groups: Record<string, MealRecord[]>, meal) => {
@@ -790,56 +792,15 @@ export default function App() {
             <motion.div key="analyze" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="p-4">
               <AnimatePresence mode="wait">
                 {loading ? (
-                  <motion.div key="loading" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
-                    className="bg-white border-[3px] border-slate-900 shadow-[8px_8px_0_0_rgba(15,23,42,1)] overflow-hidden"
-                  >
-                    <div className="bg-slate-900 text-white px-5 py-4 flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <RefreshCw className="w-4 h-4 animate-spin text-orange-400" />
-                        <span className="text-sm font-black uppercase tracking-wider">
-                          {analysisMode === 'quick' ? '⚡ 퀵 분석' : '📋 상세 분석'}
-                        </span>
-                      </div>
-                      <p className="text-[10px] font-black text-orange-400 uppercase">
-                        {Math.min(loadingStep + 1, loadingStepsData.length)}/{loadingStepsData.length}
-                      </p>
-                    </div>
-                    <div className="h-1.5 bg-slate-100">
-                      <motion.div className="h-full bg-orange-500"
-                        animate={{ width: `${((loadingStep + 1) / loadingStepsData.length) * 100}%` }}
-                        transition={{ duration: 0.6 }}
-                      />
-                    </div>
-                    {/* 이미지 프리뷰 */}
-                    {currentAnalyzingIdx >= 0 && images[currentAnalyzingIdx] && (
-                      <div className="relative aspect-video overflow-hidden">
-                        <img src={images[currentAnalyzingIdx].url} className="w-full h-full object-cover" alt="" />
-                        <div className="absolute inset-0 bg-orange-500/10 animate-pulse" />
-                        <div className="absolute bottom-0 left-0 right-0 bg-slate-900/80 py-2 text-center">
-                          <span className="text-[9px] font-black uppercase text-orange-400 tracking-widest">SCANNING...</span>
-                        </div>
-                      </div>
-                    )}
-                    {/* 스텝 목록 */}
-                    <div className="p-5 space-y-1">
-                      {loadingStepsData.map((step, i) => (
-                        <div key={i} className={`flex items-center gap-3 p-2.5 transition-all ${i === loadingStep ? 'bg-orange-50 border-2 border-orange-400' : i < loadingStep ? 'border-2 border-transparent' : 'border-2 border-transparent opacity-30'}`}>
-                          <div className="shrink-0 w-5 h-5 flex items-center justify-center">
-                            {i < loadingStep ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> :
-                             i === loadingStep ? <RefreshCw className="w-3.5 h-3.5 text-orange-500 animate-spin" /> :
-                             <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300" />}
-                          </div>
-                          <div>
-                            <p className={`text-xs font-black uppercase ${i === loadingStep ? 'text-orange-600' : i < loadingStep ? 'text-emerald-700' : 'text-slate-400'}`}>{step.label}</p>
-                            {stepDetails[i] ? (
-                              <p className="text-[9px] font-bold text-orange-500">{stepDetails[i]}</p>
-                            ) : (
-                              <p className="text-[9px] font-bold text-slate-400">{step.desc}</p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  <motion.div key="loading" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
+                    <AnalysisProgress
+                      steps={loadingStepsData}
+                      currentIndex={loadingStep}
+                      detailByIndex={stepDetails}
+                      etaSeconds={analysisMode === 'quick' ? 8 : 20}
+                      modeLabel={analysisMode === 'quick' ? '⚡ 퀵 분석' : '📋 상세 분석'}
+                      imageUrl={currentAnalyzingIdx >= 0 ? images[currentAnalyzingIdx]?.url : undefined}
+                    />
                   </motion.div>
 
                 ) : selectedMeal ? (
