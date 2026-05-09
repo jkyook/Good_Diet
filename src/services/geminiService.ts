@@ -1,6 +1,7 @@
 // 클라이언트 측 분석 서비스. AI SDK 직접 호출은 보안 문제로 제거되었고,
 // 이제 모든 호출은 /api/analyze, /api/analyze-batch, /api/health 프록시를 거친다.
 // 키는 서버(Vercel 함수 환경변수)에만 존재.
+import { maskText, maskArray, findMatches } from '../utils/contentFilter';
 
 export type AnalysisMode = 'quick' | 'detailed';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
@@ -243,8 +244,29 @@ export const analyzeFood = async (
 
   if (errMsg) throw new Error(errMsg);
   if (!result) throw new Error('서버에서 결과를 받지 못했습니다.');
-  return result;
+  return sanitizeResult(result);
 };
+
+// 의료 표현 2차 방어선: 서버 프롬프트 가드를 모델이 우회한 경우를 잡는다.
+// improvements / warnings / mealTip / markdown 텍스트 필드에 마스킹 적용.
+function sanitizeResult(result: AnalysisResult): AnalysisResult {
+  const matches = [
+    ...findMatches(result.markdown ?? ''),
+    ...findMatches(result.mealTip ?? ''),
+    ...(result.improvements ?? []).flatMap(s => findMatches(s)),
+    ...(result.warnings ?? []).flatMap(s => findMatches(s)),
+  ];
+  if (matches.length > 0) {
+    console.warn('[contentFilter] 의료 표현 마스킹:', matches.map(m => `${m.term}(${m.category})`).join(', '));
+  }
+  return {
+    ...result,
+    markdown: maskText(result.markdown ?? ''),
+    mealTip: maskText(result.mealTip ?? ''),
+    improvements: maskArray(result.improvements),
+    warnings: maskArray(result.warnings),
+  };
+}
 
 // --- 다중 이미지 일괄 분석 (서버 SSE 호출) ---
 export const analyzeFoodBatch = async (
@@ -278,8 +300,9 @@ export const analyzeFoodBatch = async (
       | { type: 'error'; message: string };
 
     if (ev.type === 'item') {
-      if (ev.result) results.push(ev.result);
-      onProgress?.(ev.index + 1, images.length, ev.result);
+      const sanitized = ev.result ? sanitizeResult(ev.result) : undefined;
+      if (sanitized) results.push(sanitized);
+      onProgress?.(ev.index + 1, images.length, sanitized);
     } else if (ev.type === 'progress') {
       // progress 이벤트는 onProgress 가 item 에서 이미 호출됨
     } else if (ev.type === 'error') {

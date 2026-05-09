@@ -294,6 +294,14 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
         </div>
       )}
 
+      {/* 의료 면책 디스클레이머 */}
+      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3">
+        <p className="text-[11px] leading-relaxed text-amber-900">
+          ⚠️ 본 서비스는 <span className="font-semibold">의료기기가 아니며</span>, 의사의 진단·치료·처방을 대체할 수 없습니다.
+          영양 정보는 일반 참고용이며, 건강 상태에 따라 전문가와 상의하세요.
+        </p>
+      </div>
+
       {/* 뒤로 가기 */}
       <button
         onClick={onBack}
