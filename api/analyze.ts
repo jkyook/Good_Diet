@@ -6,6 +6,7 @@ import { parseResult, JSONParseError } from './_lib/parse';
 import { buildQuickPrompt, buildDetailedPrompt } from './_lib/prompt';
 import { checkRateLimit } from './_lib/rateLimit';
 import { handlePreflight } from './_lib/cors';
+import { validateImage } from './_lib/validate';
 
 function send(res: ApiRes, payload: unknown) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -33,10 +34,18 @@ export default async function handler(req: ApiReq, res: ApiRes) {
   const body: AnalyzeRequest = await readBody(req);
   const { imageData, age, gender, existingMealsCount = 0, mode = 'detailed', provider = 'groq' } = body;
 
-  if (!imageData || !age || !gender) {
+  if (!age || !gender) {
     res.statusCode = 400;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'imageData, age, gender 가 필요합니다.' }));
+    res.end(JSON.stringify({ error: 'age, gender 가 필요합니다.' }));
+    return;
+  }
+
+  const imageErr = validateImage(imageData);
+  if (imageErr) {
+    res.statusCode = imageErr.status;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: imageErr.error }));
     return;
   }
 

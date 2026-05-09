@@ -6,6 +6,7 @@ import { parseResult, JSONParseError } from './_lib/parse';
 import { buildQuickPrompt } from './_lib/prompt';
 import { checkRateLimit } from './_lib/rateLimit';
 import { handlePreflight } from './_lib/cors';
+import { validateImage } from './_lib/validate';
 
 interface BatchRequest {
   images: string[];
@@ -52,6 +53,16 @@ export default async function handler(req: ApiReq, res: ApiRes) {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: `한 번에 최대 ${MAX_BATCH}장까지 가능합니다.` }));
     return;
+  }
+
+  for (let i = 0; i < images.length; i++) {
+    const imageErr = validateImage(images[i]);
+    if (imageErr) {
+      res.statusCode = imageErr.status;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: `images[${i}]: ${imageErr.error}` }));
+      return;
+    }
   }
 
   res.statusCode = 200;
