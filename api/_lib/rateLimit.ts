@@ -13,10 +13,25 @@ const MAX_TOKENS = 10;        // 1분당 최대 10회
 const REFILL_PER_SEC = MAX_TOKENS / 60;
 const KEY_TTL_MS = 10 * 60 * 1000; // 10분 미사용 시 정리
 
+function pickHeader(h: string | string[] | undefined): string | undefined {
+  if (!h) return undefined;
+  return Array.isArray(h) ? h[0] : h;
+}
+
+// IP 추출. Vercel 환경에서는 x-real-ip / x-vercel-forwarded-for 가 신뢰 가능.
+// x-forwarded-for 는 클라이언트가 임의로 주입할 수 있어 마지막 fallback 으로만 사용.
 function getKey(req: ApiReq): string {
-  const xff = req.headers['x-forwarded-for'];
-  const ip = Array.isArray(xff) ? xff[0] : (xff?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown');
-  return ip;
+  const realIp = pickHeader(req.headers['x-real-ip']);
+  if (realIp) return realIp.trim();
+
+  const vercelXff = pickHeader(req.headers['x-vercel-forwarded-for']);
+  if (vercelXff) return vercelXff.split(',')[0].trim();
+
+  // 마지막 fallback: 일반 x-forwarded-for + socket. 신뢰도 낮음.
+  const xff = pickHeader(req.headers['x-forwarded-for']);
+  if (xff) return xff.split(',')[0].trim();
+
+  return req.socket.remoteAddress || 'unknown';
 }
 
 function gc() {
