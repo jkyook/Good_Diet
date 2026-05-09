@@ -15,7 +15,7 @@ import ReactMarkdown from 'react-markdown';
 import {
   analyzeFood, AnalysisResult, AnalysisMode, StreamEvent, MealType,
   AIProvider, GEMINI_AVAILABLE, CLAUDE_AVAILABLE, GROQ_AVAILABLE,
-  PROVIDER_LABELS, PROVIDER_AVAILABLE, FALLBACK_ORDER, isQuotaError,
+  PROVIDER_LABELS, PROVIDER_AVAILABLE, FALLBACK_ORDER, isQuotaError, JSONParseError,
 } from './services/geminiService';
 import {
   signIn, signUp, signOut, getSession, onAuthChange,
@@ -417,8 +417,14 @@ export default function App() {
             break;
           } catch (err) {
             lastErr = err instanceof Error ? err.message : String(err);
-            if (isQuotaError(lastErr)) continue; // 다음 프로바이더 시도
-            throw err; // 할당량 외 오류는 즉시 던짐
+            // 할당량 초과 또는 JSON 파싱 실패(garbled 응답)는 다음 프로바이더로 폴백
+            if (isQuotaError(lastErr) || err instanceof JSONParseError) {
+              if (err instanceof JSONParseError) {
+                showToast(`${PROVIDER_LABELS[currentProvider]} 응답 파싱 실패 → 다음 프로바이더 시도`, 'error');
+              }
+              continue;
+            }
+            throw err; // 그 외 오류는 즉시 던짐
           }
         }
 

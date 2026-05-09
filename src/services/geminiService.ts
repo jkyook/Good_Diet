@@ -243,17 +243,41 @@ ${data.mealTip}`;
 };
 
 // --- JSON 추출 (CoT 사고 과정 텍스트 제거) ---
+// 문자열 리터럴을 인지하면서 균형 잡힌 최상위 { } 블록을 스캔, 마지막 완전한 블록 반환.
+// 이전의 lastIndexOf 방식은 CoT 안에 단독 '}' 문자가 섞이면 잘못된 슬라이스를 만들었다.
 function extractJSON(text: string): string {
-  // ```json ... ``` 코드블록 우선 추출
   const codeBlock = text.match(/```json\s*([\s\S]*?)```/);
   if (codeBlock) return codeBlock[1].trim();
 
-  // CoT 텍스트 이후 마지막 { } 블록 추출
-  const start = text.lastIndexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start !== -1 && end > start) return text.slice(start, end + 1);
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escape = false;
+  let lastValid: string | null = null;
 
-  return text;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (inString) {
+      if (ch === '\\') escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}') {
+      if (depth === 0) continue;
+      depth--;
+      if (depth === 0 && start !== -1) {
+        lastValid = text.slice(start, i + 1);
+        start = -1;
+      }
+    }
+  }
+
+  return lastValid ?? text;
 }
 
 // --- mealScore 영문 값 → 한국어 정규화 ---
@@ -272,14 +296,23 @@ function normalizeMealScoreVal(val: string): string {
   return mapped ?? val;
 }
 
+// --- JSON 파싱 실패 전용 오류 (호출부에서 프로바이더 폴백 트리거) ---
+export class JSONParseError extends Error {
+  constructor(message = 'AI 응답 JSON 파싱 실패') {
+    super(message);
+    this.name = 'JSONParseError';
+  }
+}
+
 // --- 파싱 ---
 function parseResult(jsonText: string, mode: AnalysisMode, provider: AIProvider): AnalysisResult {
   const cleaned = extractJSON(jsonText);
-  let raw: Record<string, unknown> = {};
+  let raw: Record<string, unknown>;
   try {
     raw = JSON.parse(cleaned);
-  } catch {
-    raw = { isAmbiguous: false, foodName: '분석 실패', calories: 0 };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new JSONParseError(`AI 응답 JSON 파싱 실패 (${provider}): ${detail}`);
   }
 
   const isAmbiguous = !!raw.isAmbiguous;
@@ -530,6 +563,8 @@ export const analyzeFood = async (
       message = parsed?.error?.message ?? parsed?.message ?? message;
     } catch { /* not JSON */ }
     onEvent?.({ type: 'error', message });
+    // JSONParseError는 호출부에서 instanceof 검사로 폴백을 결정하므로 타입 보존
+    if (error instanceof JSONParseError) throw error;
     throw new Error(message);
   } finally {
     clearInterval(stepTimer);
