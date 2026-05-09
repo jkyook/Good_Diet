@@ -14,8 +14,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import {
   analyzeFood, AnalysisResult, AnalysisMode, StreamEvent, MealType,
-  AIProvider, GEMINI_AVAILABLE, CLAUDE_AVAILABLE, GROQ_AVAILABLE,
-  PROVIDER_LABELS, PROVIDER_AVAILABLE, FALLBACK_ORDER, isQuotaError, JSONParseError,
+  AIProvider, PROVIDER_LABELS, fetchHealth, ProviderHealth,
 } from './services/geminiService';
 import {
   signIn, signUp, signOut, getSession, onAuthChange,
@@ -100,9 +99,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('quick');
   const [mealType, setMealType] = useState<MealType>('lunch');
-  const [provider, setProvider] = useState<AIProvider>(() =>
-    GEMINI_AVAILABLE ? 'gemini' : CLAUDE_AVAILABLE ? 'claude' : GROQ_AVAILABLE ? 'groq' : 'gemini'
-  );
+  const [provider, setProvider] = useState<AIProvider>('groq');
+  const [health, setHealth] = useState<ProviderHealth>({ gemini: false, claude: false, groq: false });
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -198,6 +196,17 @@ export default function App() {
     getSession().then(u => setUser(u));
     const unsub = onAuthChange(u => setUser(u));
     return unsub;
+  }, []);
+
+  // 서버에서 프로바이더 가용성 조회 (키는 서버에만 존재)
+  useEffect(() => {
+    fetchHealth()
+      .then(h => {
+        setHealth(h);
+        // 기본 프로바이더 자동 선택: 사용 가능한 첫 번째
+        setProvider(prev => h[prev] ? prev : (h.groq ? 'groq' : h.claude ? 'claude' : h.gemini ? 'gemini' : prev));
+      })
+      .catch(err => console.error('[health] 서버 가용성 조회 실패:', err));
   }, []);
 
   useEffect(() => {
@@ -367,12 +376,6 @@ export default function App() {
     setStepDetails({});
     setCurrentAnalyzingIdx(0);
 
-    // 폴백 순서: 선택된 프로바이더 → 나머지 키가 있는 프로바이더 (Groq 항상 포함)
-    const orderedProviders: AIProvider[] = [
-      provider,
-      ...FALLBACK_ORDER.filter(p => p !== provider && PROVIDER_AVAILABLE[p]),
-    ];
-
     try {
       const results: MealRecord[] = [];
       for (let i = 0; i < images.length; i++) {
@@ -396,39 +399,18 @@ export default function App() {
           if (event.type === 'step') {
             setLoadingStep(event.index);
             setStepDetails(prev => ({ ...prev, [event.index]: event.detail }));
+          } else if (event.type === 'provider-fallback') {
+            showToast(`${PROVIDER_LABELS[event.from]} ${event.reason === 'parse' ? '응답 파싱 실패' : '할당량 초과'} → 다음 프로바이더 전환`, 'error');
+            setLoadingStep(0);
+            setStepDetails({});
           }
         };
 
-        // 자동 폴백 루프
-        let analysis: AnalysisResult | null = null;
-        let lastErr = '';
-        for (const currentProvider of orderedProviders) {
-          if (!PROVIDER_AVAILABLE[currentProvider]) continue;
-          try {
-            if (currentProvider !== provider) {
-              showToast(`${PROVIDER_LABELS[provider]} 할당량 초과 → ${PROVIDER_LABELS[currentProvider]} 전환 중...`, 'error');
-              setLoadingStep(0);
-              setStepDetails({});
-            }
-            analysis = await analyzeFood(base64, age, gender, inHistory + inBatch, analysisMode, currentProvider, onEvent);
-            if (currentProvider !== provider) {
-              showToast(`${PROVIDER_LABELS[currentProvider]} 로 분석 완료!`);
-            }
-            break;
-          } catch (err) {
-            lastErr = err instanceof Error ? err.message : String(err);
-            // 할당량 초과 또는 JSON 파싱 실패(garbled 응답)는 다음 프로바이더로 폴백
-            if (isQuotaError(lastErr) || err instanceof JSONParseError) {
-              if (err instanceof JSONParseError) {
-                showToast(`${PROVIDER_LABELS[currentProvider]} 응답 파싱 실패 → 다음 프로바이더 시도`, 'error');
-              }
-              continue;
-            }
-            throw err; // 그 외 오류는 즉시 던짐
-          }
+        // 폴백은 서버(/api/analyze)에서 처리됨 — 클라이언트는 한 번만 호출
+        const analysis = await analyzeFood(base64, age, gender, inHistory + inBatch, analysisMode, provider, onEvent);
+        if (analysis.provider !== provider) {
+          showToast(`${PROVIDER_LABELS[analysis.provider]} 로 분석 완료!`);
         }
-
-        if (!analysis) throw new Error(`모든 AI 서비스 할당량 초과: ${lastErr}`);
         results.push({ ...analysis, id: img.id, image: base64, mealType });
       }
 
@@ -938,9 +920,9 @@ export default function App() {
                         <label className="text-[10px] font-black uppercase text-slate-500">AI 엔진</label>
                         <div className="flex border-[3px] border-slate-900 shadow-[3px_3px_0_0_rgba(15,23,42,1)] overflow-hidden">
                           {([
-                            { value: 'gemini' as AIProvider, icon: '🔵', name: 'Gemini', sub: 'Google · Flash', available: GEMINI_AVAILABLE },
-                            { value: 'claude' as AIProvider, icon: '🟠', name: 'Claude', sub: 'Anthropic', available: CLAUDE_AVAILABLE },
-                            { value: 'groq' as AIProvider, icon: '🟢', name: 'Groq', sub: '무료', available: GROQ_AVAILABLE },
+                            { value: 'gemini' as AIProvider, icon: '🔵', name: 'Gemini', sub: 'Google · Flash', available: health.gemini },
+                            { value: 'claude' as AIProvider, icon: '🟠', name: 'Claude', sub: 'Anthropic', available: health.claude },
+                            { value: 'groq' as AIProvider, icon: '🟢', name: 'Groq', sub: '무료', available: health.groq },
                           ]).map(({ value, icon, name, sub, available }, i) => (
                             <button key={value} onClick={() => available && setProvider(value)}
                               title={available ? undefined : `.env에 API 키를 추가해주세요`}
