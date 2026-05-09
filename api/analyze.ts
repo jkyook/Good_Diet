@@ -5,15 +5,17 @@ import {
 import { parseResult, JSONParseError } from './_lib/parse';
 import { buildQuickPrompt, buildDetailedPrompt } from './_lib/prompt';
 import { checkRateLimit } from './_lib/rateLimit';
+import { handlePreflight } from './_lib/cors';
 
 function send(res: ApiRes, payload: unknown) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
 export default async function handler(req: ApiReq, res: ApiRes) {
+  if (handlePreflight(req, res)) return;
   if (req.method !== 'POST') {
     res.statusCode = 405;
-    res.setHeader('Allow', 'POST');
+    res.setHeader('Allow', 'POST, OPTIONS');
     res.end(JSON.stringify({ error: 'Method Not Allowed' }));
     return;
   }

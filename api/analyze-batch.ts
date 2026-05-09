@@ -5,6 +5,7 @@ import {
 import { parseResult, JSONParseError } from './_lib/parse';
 import { buildQuickPrompt } from './_lib/prompt';
 import { checkRateLimit } from './_lib/rateLimit';
+import { handlePreflight } from './_lib/cors';
 
 interface BatchRequest {
   images: string[];
@@ -21,9 +22,10 @@ function send(res: ApiRes, payload: unknown) {
 const MAX_BATCH = 10;
 
 export default async function handler(req: ApiReq, res: ApiRes) {
+  if (handlePreflight(req, res)) return;
   if (req.method !== 'POST') {
     res.statusCode = 405;
-    res.setHeader('Allow', 'POST');
+    res.setHeader('Allow', 'POST, OPTIONS');
     res.end(JSON.stringify({ error: 'Method Not Allowed' }));
     return;
   }
