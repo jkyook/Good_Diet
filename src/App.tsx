@@ -33,6 +33,7 @@ import CameraFab from './components/CameraFab';
 import BottomTabBar from './components/BottomTabBar';
 import HomeSwipeArea from './components/HomeSwipeArea';
 import { calcDailyScore } from './services/scoreService';
+import { compressImage, fileToDataUrl } from './utils/imageCompress';
 import type { AnalysisStep } from './components/AnalysisProgress.types';
 import type { BatchAnalysisCompletion } from './components/BatchAnalyzer';
 import type { MealRecord, DailyScore } from './types';
@@ -70,25 +71,6 @@ function calcDailyTarget(gender: Gender, weight: number, height: number, age: nu
     : 447.593 + 9.247 * weight + 3.098 * height - 4.330 * age;
   const multipliers: Record<ActivityLevel, number> = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725 };
   return Math.round(bmr * multipliers[activity]);
-}
-
-function compressImage(file: File): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      const maxSize = 1024;
-      const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * ratio);
-      canvas.height = Math.round(img.height * ratio);
-      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(objectUrl);
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
-    };
-    img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(''); };
-    img.src = objectUrl;
-  });
 }
 
 function localDateKey(input: string | Date): string {
@@ -436,11 +418,7 @@ export default function App() {
         setStepDetails({});
 
         const compressed = await compressImage(img.file);
-        const base64 = compressed || await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(img.file);
-        });
+        const base64 = await fileToDataUrl(compressed);
 
         const today = new Date().toDateString();
         const inHistory = history.filter(h => new Date(h.date).toDateString() === today).length;
