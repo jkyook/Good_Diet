@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { AnalysisMode, AIProvider, MealType, AnalysisResult } from './geminiService';
+import type { MealRecord } from '../types';
 
 // ── 타입 정의 ──────────────────────────────────────────────────────────────────
 
@@ -8,11 +9,7 @@ export interface SupabaseUser {
   email: string;
 }
 
-export interface MealRecord extends AnalysisResult {
-  id: string;
-  image: string;
-  mealType: MealType;
-}
+export type { MealRecord };
 
 // ── 환경변수 & 가용성 ──────────────────────────────────────────────────────────
 
