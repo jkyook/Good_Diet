@@ -8,7 +8,7 @@ import React from 'react';
 import {
   Camera, Upload, Utensils, RefreshCw, User, Calendar,
   Plus, Trash2, History, Zap, Target, TrendingUp, Download, RotateCcw,
-  Home, ChevronDown,
+  Home, ChevronDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -25,9 +25,17 @@ import BatchAnalyzer from './components/BatchAnalyzer';
 import DayMealLog from './components/DayMealLog';
 import AnalysisResultCard from './components/AnalysisResultCard';
 import AnalysisProgress from './components/AnalysisProgress';
+import CalendarView from './components/CalendarView';
+import DailyScoreModal from './components/DailyScoreModal';
+import RecommendationCards from './components/RecommendationCards';
+import DateNavBar from './components/DateNavBar';
+import CameraFab from './components/CameraFab';
+import BottomTabBar from './components/BottomTabBar';
+import HomeSwipeArea from './components/HomeSwipeArea';
+import { calcDailyScore } from './services/scoreService';
 import type { AnalysisStep } from './components/AnalysisProgress.types';
 import type { BatchAnalysisCompletion } from './components/BatchAnalyzer';
-import type { MealRecord } from './types';
+import type { MealRecord, DailyScore } from './types';
 
 type Gender = 'male' | 'female';
 type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active';
@@ -90,6 +98,22 @@ function localDateKey(input: string | Date): string {
   return `${d.getFullYear()}-${month}-${day}`;
 }
 
+function shiftDateKey(baseKey: string, offsetDays: number): string {
+  const base = new Date(`${baseKey}T12:00:00`);
+  base.setDate(base.getDate() + offsetDays);
+  return localDateKey(base);
+}
+
+function dateLabel(dateKey: string): string {
+  const todayKey = localDateKey(new Date());
+  const yesterdayKey = shiftDateKey(todayKey, -1);
+  const twoDaysAgoKey = shiftDateKey(todayKey, -2);
+  if (dateKey === todayKey) return '오늘';
+  if (dateKey === yesterdayKey) return '어제';
+  if (dateKey === twoDaysAgoKey) return '그제';
+  return new Date(`${dateKey}T12:00:00`).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+}
+
 export default function App() {
   // --- Profile ---
   const [age, setAge] = useState(30);
@@ -111,6 +135,7 @@ export default function App() {
   // --- Loading state ---
   const [loadingStep, setLoadingStep] = useState(0);
   const [currentAnalyzingIdx, setCurrentAnalyzingIdx] = useState(-1);
+  const [currentAnalyzingImageUrl, setCurrentAnalyzingImageUrl] = useState<string | undefined>();
   const [stepDetails, setStepDetails] = useState<Record<number, string>>({});
 
   // --- History & UI ---
@@ -123,6 +148,9 @@ export default function App() {
   const [mainTab, setMainTab] = useState<'home' | 'analyze' | 'history' | 'stats'>('home');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [selectedDateKey, setSelectedDateKey] = useState(() => localDateKey(new Date()));
+  const [showScoreModal, setShowScoreModal] = useState(false);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
 
   // --- Overlays ---
   const [toast, setToast] = useState<Toast | null>(null);
@@ -141,6 +169,7 @@ export default function App() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cameraAutoAnalyzeRef = useRef(false);
 
   // --- Computed ---
   const dailyCalorieTarget = useMemo(
@@ -276,10 +305,11 @@ export default function App() {
 
   const addFiles = (files: File[]) => {
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
-    if (imageFiles.length === 0) { showToast('이미지 파일만 업로드 가능합니다.', 'error'); return; }
+    if (imageFiles.length === 0) { showToast('이미지 파일만 업로드 가능합니다.', 'error'); return []; }
     const newImages = imageFiles.map(file => ({ id: crypto.randomUUID(), url: URL.createObjectURL(file), file }));
     setImages(prev => [...prev, ...newImages]);
     setError(null);
+    return newImages;
   };
 
   const getDailyStats = (date: string) => {
@@ -352,8 +382,14 @@ export default function App() {
 
   // --- Handlers ---
   const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    addFiles(Array.from(e.target.files || []));
+    const newImages = addFiles(Array.from(e.target.files || []));
     e.target.value = '';
+    if (cameraAutoAnalyzeRef.current) {
+      cameraAutoAnalyzeRef.current = false;
+      if (newImages.length > 0) {
+        void startAnalysis(newImages);
+      }
+    }
   };
 
   const removeImage = (id: string) => {
@@ -372,8 +408,17 @@ export default function App() {
     addFiles(Array.from(e.dataTransfer.files));
   };
 
-  const startAnalysis = async () => {
-    if (images.length === 0) { setError('분석할 음식 사진을 하나 이상 업로드해주세요.'); return; }
+  const openCameraForAnalysis = () => {
+    cameraAutoAnalyzeRef.current = true;
+    setSelectedMeal(null);
+    setMainTab('analyze');
+    cameraInputRef.current?.click();
+  };
+
+  const startAnalysis = async (sourceImages = images) => {
+    if (sourceImages.length === 0) { setError('분석할 음식 사진을 하나 이상 업로드해주세요.'); return; }
+    setMainTab('analyze');
+    setSelectedMeal(null);
     setLoading(true);
     setError(null);
     setLoadingStep(0);
@@ -382,9 +427,10 @@ export default function App() {
 
     try {
       const results: MealRecord[] = [];
-      for (let i = 0; i < images.length; i++) {
-        const img = images[i];
+      for (let i = 0; i < sourceImages.length; i++) {
+        const img = sourceImages[i];
         setCurrentAnalyzingIdx(i);
+        setCurrentAnalyzingImageUrl(img.url);
         setLoadingStep(0);
         setStepDetails({});
 
@@ -422,8 +468,15 @@ export default function App() {
       if (user) {
         for (const r of results) await saveMeal(r, user.id);
       }
-      setImages(prev => { prev.forEach(img => URL.revokeObjectURL(img.url)); return []; });
+      setImages(prev => {
+        const usedIds = new Set(sourceImages.map(img => img.id));
+        prev.forEach(img => {
+          if (usedIds.has(img.id)) URL.revokeObjectURL(img.url);
+        });
+        return prev.filter(img => !usedIds.has(img.id));
+      });
       setSelectedMeal(results[0]);
+      setSelectedDateKey(localDateKey(results[0].date));
       showToast(`${results.length}개 분석 완료!`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
@@ -432,6 +485,7 @@ export default function App() {
       setLoadingStep(0);
       setStepDetails({});
       setCurrentAnalyzingIdx(-1);
+      setCurrentAnalyzingImageUrl(undefined);
     }
   };
 
@@ -480,10 +534,39 @@ export default function App() {
     [todayMeals]
   );
 
+  const selectedDateMeals = useMemo(() =>
+    history.filter(h => localDateKey(h.date) === selectedDateKey),
+    [history, selectedDateKey],
+  );
+
+  const selectedDateCalories = useMemo(() =>
+    selectedDateMeals.reduce((sum, m) => sum + (m.calories || 0), 0),
+    [selectedDateMeals],
+  );
+
+  const todayKey = useMemo(() => localDateKey(new Date()), []);
+
+  const mealCountByDate = useMemo(() => {
+    const acc: Record<string, number> = {};
+    history.forEach(h => {
+      const key = localDateKey(h.date);
+      acc[key] = (acc[key] ?? 0) + 1;
+    });
+    return acc;
+  }, [history]);
+
+  const todayScore = useMemo<DailyScore>(() => ({
+    ...calcDailyScore(todayMeals, dailyCalorieTarget),
+    aiComment: '',
+  }), [todayMeals, dailyCalorieTarget]);
+
+  const isAnalyzing = loading;
+  const fabHidden = isAnalyzing || (mainTab === 'analyze' && !!selectedMeal);
+
   const maxWeeklyCalories = Math.max(...weeklyStats.map(d => d.calories), dailyCalorieTarget, 1);
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans overflow-x-hidden pb-20 selection:bg-orange-100">
+    <div className="min-h-screen bg-[#f7f3ed] text-slate-900 font-sans overflow-x-hidden pb-28 selection:bg-orange-100">
 
       {/* Toast */}
       <AnimatePresence>
@@ -698,106 +781,139 @@ export default function App() {
       </header>
 
       {/* ── 탭 콘텐츠 ── */}
-      <main>
+      <main className="pb-[80px]">
         <AnimatePresence mode="wait">
 
           {/* ════ 홈 탭 ════ */}
           {mainTab === 'home' && (
-            <motion.div key="home" initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }} transition={{ duration: 0.2 }} className="p-4 space-y-4">
+            <motion.div key="home" initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }} transition={{ duration: 0.2 }}>
 
-              {/* 오늘 칼로리 카드 */}
-              <div className="bg-white border-[3px] border-slate-900 shadow-[6px_6px_0_0_rgba(15,23,42,1)] p-5">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">오늘 섭취</p>
-                    <p className="text-3xl font-black mt-0.5">{todayCalories.toLocaleString()} <span className="text-sm opacity-40">kcal</span></p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[9px] font-black text-slate-400 uppercase">목표</p>
-                    <p className="text-sm font-black text-orange-500">{dailyCalorieTarget.toLocaleString()}</p>
-                    <p className="text-[9px] text-slate-400 font-bold">{gender === 'male' ? '남성' : '여성'} · {age}세</p>
+              <DateNavBar
+                selectedDateKey={selectedDateKey}
+                onChange={setSelectedDateKey}
+                todayKey={todayKey}
+                mealCountByDate={mealCountByDate}
+                onCalendarTap={() => setShowCalendarModal(true)}
+              />
+
+              <HomeSwipeArea
+                onShiftDate={(offset) => setSelectedDateKey(prev => shiftDateKey(prev, offset))}
+                canShiftNext={selectedDateKey < todayKey}
+                onBlockedNext={() => showToast('오늘이 마지막이에요', 'success')}
+              >
+              <div className="p-4 space-y-4">
+
+              <section className="bg-white rounded-[28px] border border-orange-100 shadow-sm overflow-hidden">
+                <div className="px-5 pt-5 pb-4 bg-gradient-to-br from-orange-50 to-white">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-black text-orange-500">내 식단 동네</p>
+                      <h1 className="mt-1 text-2xl font-black tracking-tight">{dateLabel(selectedDateKey)} 식단</h1>
+                      <p className="mt-1 text-xs font-bold text-slate-400">
+                        {new Date(`${selectedDateKey}T12:00:00`).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-[10px] font-black text-slate-400">섭취량</p>
+                      <p className="text-xl font-black text-slate-900">{selectedDateCalories.toLocaleString()}</p>
+                      <p className="text-[10px] font-bold text-slate-400">/ {dailyCalorieTarget.toLocaleString()} kcal</p>
+                    </div>
                   </div>
                 </div>
-                <div className="h-3 bg-slate-100 border-[2px] border-slate-900 overflow-hidden shadow-[2px_2px_0_0_rgba(15,23,42,1)]">
-                  <motion.div
-                    animate={{ width: `${Math.min(100, todayCalories > 0 ? (todayCalories / dailyCalorieTarget) * 100 : 0)}%` }}
-                    transition={{ duration: 0.8, ease: 'easeOut' }}
-                    className={`h-full ${todayCalories > dailyCalorieTarget ? 'bg-rose-500' : 'bg-orange-500'}`}
-                  />
-                </div>
-                <p className="text-[9px] text-slate-400 font-bold mt-2 uppercase">
-                  {Math.round((todayCalories / dailyCalorieTarget) * 100)}% of daily goal · {todayMeals.length}끼
-                </p>
-              </div>
 
-              {/* 오늘 식사 */}
-              <div className="bg-slate-900 text-white border-[3px] border-slate-900 shadow-[6px_6px_0_0_rgba(15,23,42,1)]">
-                <div className="px-5 pt-4 pb-2 flex justify-between items-center">
-                  <p className="text-[10px] font-black uppercase text-slate-400">오늘 식사</p>
-                  {todayMeals.length > 0 && (
-                    <button onClick={() => setMainTab('history')} className="text-[9px] font-black uppercase text-slate-400 hover:text-white">전체 보기</button>
+                <div className="px-5 py-4">
+                  <div className="h-2.5 bg-orange-50 rounded-full overflow-hidden">
+                    <motion.div
+                      animate={{ width: `${Math.min(100, selectedDateCalories > 0 ? (selectedDateCalories / dailyCalorieTarget) * 100 : 0)}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut' }}
+                      className={`h-full rounded-full bg-gradient-to-r from-emerald-400 via-orange-400 to-rose-400`}
+                      style={{ filter: selectedDateCalories === 0 ? 'grayscale(1)' : undefined }}
+                    />
+                  </div>
+                  <p className="mt-2 text-[10px] font-bold text-slate-400">
+                    목표 대비 {Math.round((selectedDateCalories / dailyCalorieTarget) * 100)}% · 총 {selectedDateMeals.length}끼 기록
+                  </p>
+
+                  {selectedDateKey === todayKey && todayMeals.length > 0 && (
+                    <button
+                      onClick={() => setShowScoreModal(true)}
+                      className="mt-3 w-full py-2.5 rounded-2xl bg-orange-500 text-white text-xs font-black shadow-[0_6px_14px_rgba(249,115,22,0.28)] active:scale-[0.98] transition-transform"
+                      aria-label="오늘의 식단 점수 보기"
+                    >
+                      오늘의 점수 보기 ({todayScore.totalScore}점 · {todayScore.grade})
+                    </button>
                   )}
                 </div>
-                {todayMeals.length === 0 ? (
-                  <div className="text-center py-8 opacity-30">
-                    <p className="text-sm font-black">아직 기록된 식사가 없습니다</p>
+              </section>
+
+              <section className="space-y-3">
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="text-sm font-black text-slate-900">{dateLabel(selectedDateKey)} 먹은 식단</h2>
+                  {selectedDateMeals.length > 0 && (
+                    <button onClick={() => setMainTab('history')} className="text-xs font-black text-orange-500">전체 기록</button>
+                  )}
+                </div>
+
+                {selectedDateMeals.length === 0 ? (
+                  <div className="bg-white rounded-[24px] border border-orange-100 p-8 text-center">
+                    <div className="w-14 h-14 mx-auto rounded-full bg-orange-50 flex items-center justify-center text-orange-500">
+                      <Camera className="w-6 h-6" />
+                    </div>
+                    <p className="mt-4 text-sm font-black text-slate-800">이 날짜에는 아직 식단이 없어요</p>
+                    <p className="mt-1 text-xs font-bold text-slate-400">오른쪽 아래 + 버튼으로 바로 촬영해보세요.</p>
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-800">
-                    {todayMeals.slice(0, 3).map(meal => (
-                      <button key={meal.id}
+                  <div className="space-y-2.5">
+                    {selectedDateMeals.map(meal => (
+                      <button
+                        key={meal.id}
                         onClick={() => { setSelectedMeal(meal); setMainTab('analyze'); }}
-                        className="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-800 transition-colors active:bg-slate-700 text-left"
+                        className="w-full bg-white rounded-[22px] border border-orange-100 p-3 flex items-center gap-3 text-left shadow-sm active:scale-[0.99] transition-transform"
                       >
-                        <img src={meal.image} className="w-11 h-11 object-cover shrink-0 border border-slate-700" alt="" />
+                        <img src={meal.image} className="w-16 h-16 rounded-2xl object-cover bg-orange-50 shrink-0" alt="" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-black truncate">{MEAL_TYPES.find(t=>t.value===meal.mealType)?.emoji} {meal.foodName}</p>
-                          <p className="text-[10px] text-slate-400 font-bold">{meal.calories} kcal · {new Date(meal.date).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</p>
+                          <p className="mt-1 text-xs font-bold text-slate-400">
+                            {new Date(meal.date).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})} · {meal.calories.toLocaleString()} kcal
+                          </p>
+                          <div className="mt-2 flex gap-1.5">
+                            <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-black text-orange-600">{meal.mode === 'quick' ? '퀵 분석' : '상세 분석'}</span>
+                            {meal.category && <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-500">{meal.category}</span>}
+                          </div>
                         </div>
-                        <span className="text-[9px] text-slate-500">&rsaquo;</span>
+                        <ChevronRight className="w-4 h-4 text-slate-300" />
                       </button>
                     ))}
-                    {todayMeals.length > 3 && (
-                      <button onClick={() => setMainTab('history')} className="w-full py-2 text-[10px] font-black uppercase text-slate-500 hover:text-white transition-colors">
-                        +{todayMeals.length - 3}개 더 보기
-                      </button>
-                    )}
                   </div>
                 )}
-                <div className="px-5 pb-4 pt-3">
-                  <button onClick={() => setMainTab('analyze')}
-                    className="w-full py-4 bg-orange-500 text-white font-black uppercase text-sm border-[3px] border-white/20 active:opacity-80 transition-opacity flex items-center justify-center gap-2"
-                  >
-                    <Camera className="w-4 h-4" /> 식사 분석하기
-                  </button>
-                </div>
-              </div>
+              </section>
 
-              {/* 주간 요약 */}
-              <div className="bg-white border-[3px] border-slate-900 shadow-[6px_6px_0_0_rgba(15,23,42,1)] p-5">
+              <section className="bg-white rounded-[24px] border border-orange-100 p-4">
                 <div className="flex justify-between items-center mb-4">
-                  <p className="text-[10px] font-black uppercase text-slate-400">이번 주</p>
-                  <button onClick={() => setMainTab('stats')} className="text-[9px] font-black uppercase text-orange-500">통계 보기</button>
+                  <p className="text-xs font-black text-slate-500">최근 7일 흐름</p>
+                  <button onClick={() => setMainTab('stats')} className="text-xs font-black text-orange-500">통계 보기</button>
                 </div>
-                <div className="flex items-end gap-1" style={{ height: '60px' }}>
+                <div className="flex items-end gap-1.5" style={{ height: '60px' }}>
                   {weeklyStats.map((day, i) => {
                     const barH = day.calories > 0 ? Math.max(8, (day.calories / maxWeeklyCalories) * 100) : 4;
                     return (
-                      <div key={i} className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full">
-                        <div className="w-full flex items-end" style={{ height: 'calc(100% - 14px)' }}>
+                      <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1 h-full">
+                        <div className="w-full flex items-end rounded-full overflow-hidden bg-orange-50" style={{ height: 'calc(100% - 16px)' }}>
                           <motion.div
                             initial={{ height: 0 }}
                             animate={{ height: `${barH}%` }}
                             transition={{ duration: 0.5, delay: i * 0.04 }}
-                            className={`w-full border ${day.calories === 0 ? 'bg-slate-100 border-slate-200' : day.isToday ? 'bg-orange-400 border-orange-300' : day.calories > dailyCalorieTarget ? 'bg-rose-400 border-rose-300' : 'bg-emerald-400 border-emerald-300'}`}
+                            className={`w-full rounded-t-full ${day.isToday ? 'bg-orange-500' : day.calories > dailyCalorieTarget ? 'bg-rose-400' : 'bg-emerald-400'}`}
                           />
                         </div>
-                        <span className={`text-[8px] font-black uppercase ${day.isToday ? 'text-orange-500' : 'text-slate-400'}`}>{day.label}</span>
+                        <span className={`text-[9px] font-black ${day.isToday ? 'text-orange-500' : 'text-slate-400'}`}>{day.label}</span>
                       </div>
                     );
                   })}
                 </div>
+              </section>
               </div>
+              </HomeSwipeArea>
             </motion.div>
           )}
 
@@ -813,7 +929,7 @@ export default function App() {
                       detailByIndex={stepDetails}
                       etaSeconds={analysisMode === 'quick' ? 8 : 20}
                       modeLabel={analysisMode === 'quick' ? '⚡ 퀵 분석' : '📋 상세 분석'}
-                      imageUrl={currentAnalyzingIdx >= 0 ? images[currentAnalyzingIdx]?.url : undefined}
+                      imageUrl={currentAnalyzingIdx >= 0 ? currentAnalyzingImageUrl : undefined}
                     />
                   </motion.div>
 
@@ -825,6 +941,9 @@ export default function App() {
                       dailyCalorieConsumed={getDailyStats(selectedMeal.date).calories}
                       onBack={() => setSelectedMeal(null)}
                     />
+                    {selectedMeal.recommendations && (
+                      <RecommendationCards recommendations={selectedMeal.recommendations} />
+                    )}
                   </motion.div>
 
                 ) : (
@@ -847,11 +966,10 @@ export default function App() {
                         <p className="text-xs font-black uppercase">{isDragOver ? '놓아서 업로드' : '사진 업로드'}</p>
                         <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">드래그 · 클릭 · 붙여넣기</p>
                         <input type="file" multiple ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
-                        <input type="file" ref={cameraInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" capture="environment" />
                       </div>
 
                       {/* 카메라 버튼 */}
-                      <button onClick={() => cameraInputRef.current?.click()}
+                      <button onClick={() => { cameraAutoAnalyzeRef.current = false; cameraInputRef.current?.click(); }}
                         className="w-full py-3 flex items-center justify-center gap-2 bg-slate-900 text-white border-[3px] border-slate-900 shadow-[4px_4px_0_0_rgba(15,23,42,1)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all font-black uppercase text-sm"
                       >
                         <Camera className="w-4 h-4" /> 카메라로 촬영
@@ -934,7 +1052,7 @@ export default function App() {
                           <span className="text-rose-500 text-lg shrink-0">⚠</span>
                           <div className="flex-1 min-w-0">
                             <p className="text-rose-700 text-xs font-bold leading-relaxed break-all">{error}</p>
-                            <button onClick={startAnalysis} className="mt-2 flex items-center gap-1.5 text-[10px] font-black uppercase text-rose-600">
+                            <button onClick={() => void startAnalysis()} className="mt-2 flex items-center gap-1.5 text-[10px] font-black uppercase text-rose-600">
                               <RotateCcw className="w-3 h-3" /> 다시 시도
                             </button>
                           </div>
@@ -964,7 +1082,7 @@ export default function App() {
                       />
 
                       {/* 분석 버튼 */}
-                      <button onClick={startAnalysis} disabled={loading || images.length === 0}
+                      <button onClick={() => void startAnalysis()} disabled={loading || images.length === 0}
                         className={`w-full py-5 text-base font-black uppercase border-[3px] border-slate-900 transition-all ${loading || images.length === 0 ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none border-slate-300' : 'bg-orange-500 text-white shadow-[8px_8px_0_0_rgba(15,23,42,1)] active:shadow-none active:translate-x-2 active:translate-y-2'}`}
                       >
                         {loading ? (
@@ -984,6 +1102,12 @@ export default function App() {
               className="p-4 space-y-4"
               onClick={() => setActiveItemId(null)}
             >
+              <CalendarView
+                history={history}
+                dailyTarget={dailyCalorieTarget}
+                onMealClick={(meal) => { setSelectedMeal(meal); setMainTab('analyze'); }}
+              />
+
               {/* 오늘 식단 요약 */}
               <DayMealLog
                 records={history}
@@ -1159,25 +1283,78 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {/* ── 하단 탭바 ── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t-[3px] border-slate-900 flex shadow-[0_-4px_0_0_rgba(15,23,42,1)]">
-        {([
-          { id: 'home',    icon: <Home className="w-5 h-5" />,      label: '홈' },
-          { id: 'analyze', icon: <Camera className="w-5 h-5" />,    label: '분석' },
-          { id: 'history', icon: <History className="w-5 h-5" />,   label: '기록' },
-          { id: 'stats',   icon: <TrendingUp className="w-5 h-5" />, label: '통계' },
-        ] as { id: 'home'|'analyze'|'history'|'stats', icon: React.ReactNode, label: string }[]).map(tab => (
-          <button key={tab.id} onClick={() => { setMainTab(tab.id); setActiveItemId(null); }}
-            className={`relative flex-1 flex flex-col items-center gap-0.5 py-3 transition-colors ${mainTab === tab.id ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
+      <input
+        type="file"
+        ref={cameraInputRef}
+        onChange={handleImageUpload}
+        className="hidden"
+        accept="image/*"
+        capture="environment"
+      />
+
+      <CameraFab
+        hide={fabHidden}
+        onCapture={() => {
+          setSelectedDateKey(todayKey);
+          openCameraForAnalysis();
+        }}
+      />
+
+      <BottomTabBar
+        activeTab={mainTab}
+        onChange={(tab) => { setMainTab(tab); setActiveItemId(null); }}
+      />
+
+      <AnimatePresence>
+        {showScoreModal && (
+          <DailyScoreModal
+            score={todayScore}
+            onClose={() => setShowScoreModal(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showCalendarModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+            onClick={() => setShowCalendarModal(false)}
+            role="dialog"
+            aria-label="캘린더"
           >
-            {tab.icon}
-            <span className="text-[9px] font-black uppercase">{tab.label}</span>
-            {mainTab === tab.id && (
-              <motion.div layoutId="tabIndicator" className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-orange-500" />
-            )}
-          </button>
-        ))}
-      </nav>
+            <motion.div
+              initial={{ y: 32, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 32, opacity: 0 }}
+              className="w-full sm:max-w-md bg-[#f7f3ed] rounded-t-3xl sm:rounded-3xl max-h-[88vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 pt-4 pb-2">
+                <p className="text-sm font-black text-slate-900">캘린더</p>
+                <button
+                  onClick={() => setShowCalendarModal(false)}
+                  className="text-xs font-black text-slate-500 px-3 py-1 rounded-full bg-white border border-slate-200"
+                  aria-label="캘린더 닫기"
+                >
+                  닫기
+                </button>
+              </div>
+              <CalendarView
+                history={history}
+                dailyTarget={dailyCalorieTarget}
+                onMealClick={(meal) => {
+                  setSelectedMeal(meal);
+                  setMainTab('analyze');
+                  setShowCalendarModal(false);
+                }}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <style>{`
         @keyframes shimmer { 0% { left: -100%; opacity: 0; } 20% { opacity: 0.5; } 100% { left: 100%; opacity: 0; } }
