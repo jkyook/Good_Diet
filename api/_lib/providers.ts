@@ -6,6 +6,9 @@ import { FOOD_ANALYSIS_SYSTEM } from './prompt.js';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+// T-038: 'groq' provider 슬롯이 xAI Grok 엔드포인트로 전환됨. 환경변수명 GROQ_API_KEY 는
+// 레거시(타입/식별자 변경 비용 회피) — 키 자체는 console.x.ai 발급분. 후속 PR 에서
+// AIProvider/PROVIDER_AVAILABLE 의 'groq' → 'xai' 식별자 정리 권장.
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 export const PROVIDER_AVAILABLE: Record<AIProvider, boolean> = {
@@ -18,7 +21,7 @@ const geminiAI = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : 
 const claudeAI = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
 
 export const PROVIDER_LABELS: Record<AIProvider, string> = {
-  groq: 'Groq Llama 4 Scout',
+  groq: 'xAI Grok 2 Vision',
   claude: 'Claude Haiku 4.5',
   gemini: 'Gemini 1.5 Flash',
 };
@@ -56,15 +59,17 @@ async function callClaude(base64Data: string, prompt: string, _mode: AnalysisMod
   return response.content[0].type === 'text' ? response.content[0].text : '';
 }
 
+// T-038: xAI Grok 엔드포인트 (OpenAI 호환 API). 함수명 callGroq 는 슬롯 식별자
+// 'groq' 와 일관성을 위해 유지 — 후속 정리 PR 에서 callXAI 로 변경 예정.
 async function callGroq(base64Data: string, prompt: string, mode: AnalysisMode): Promise<string> {
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const res = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${GROQ_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      model: 'grok-2-vision-1212',
       messages: [
         { role: 'system', content: FOOD_ANALYSIS_SYSTEM },
         {
