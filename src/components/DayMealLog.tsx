@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Trash2, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
-import { MealRecord, getDaySummary, deleteMeal, clearDay, getMealsByDate, DaySummary } from '../services/mealStore';
 import { MealType } from '../services/geminiService';
+import type { MealRecord } from '../types';
 
 const MEAL_LABELS: Record<MealType, { emoji: string; label: string }> = {
   breakfast: { emoji: '🌅', label: '아침' },
@@ -14,32 +14,63 @@ const MEAL_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 
 interface Props {
   date?: string; // YYYY-MM-DD, 기본값 오늘
+  records: MealRecord[];
   dailyCalorieTarget?: number;
-  onMealDeleted?: () => void;
+  onDeleteMeal: (id: string) => void;
+  onClearDay: (date: string) => void;
 }
 
-export default function DayMealLog({ date, dailyCalorieTarget = 2000, onMealDeleted }: Props) {
-  const today = new Date().toISOString().slice(0, 10);
+interface DaySummary {
+  date: string;
+  totalCalories: number;
+  totalProtein: number;
+  totalCarbs: number;
+  totalFat: number;
+  mealCount: number;
+  byType: Record<MealType, MealRecord[]>;
+}
+
+function dateKey(input: string | Date): string {
+  const d = input instanceof Date ? input : new Date(input);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
+function buildSummary(records: MealRecord[], targetDate: string): DaySummary {
+  const meals = records.filter(r => dateKey(r.date) === targetDate);
+  const byType: Record<MealType, MealRecord[]> = {
+    breakfast: [],
+    lunch: [],
+    dinner: [],
+    snack: [],
+  };
+
+  let totalCalories = 0, totalProtein = 0, totalCarbs = 0, totalFat = 0;
+  for (const meal of meals) {
+    byType[meal.mealType].push(meal);
+    totalCalories += meal.calories || 0;
+    totalProtein += meal.protein || 0;
+    totalCarbs += meal.carbs || 0;
+    totalFat += meal.fat || 0;
+  }
+
+  return { date: targetDate, totalCalories, totalProtein, totalCarbs, totalFat, mealCount: meals.length, byType };
+}
+
+export default function DayMealLog({ date, records, dailyCalorieTarget = 2000, onDeleteMeal, onClearDay }: Props) {
+  const today = dateKey(new Date());
   const targetDate = date ?? today;
 
-  const [summary, setSummary] = useState<DaySummary>(() => getDaySummary(targetDate));
+  const summary = useMemo(() => buildSummary(records, targetDate), [records, targetDate]);
   const [expandedTypes, setExpandedTypes] = useState<Set<MealType>>(new Set(['breakfast', 'lunch', 'dinner', 'snack']));
 
-  const refresh = () => setSummary(getDaySummary(targetDate));
-
-  useEffect(() => { refresh(); }, [targetDate]);
-
   const handleDelete = (id: string) => {
-    deleteMeal(id);
-    refresh();
-    onMealDeleted?.();
+    onDeleteMeal(id);
   };
 
   const handleClearDay = () => {
-    if (!window.confirm(`${targetDate} 식단을 모두 삭제할까요?`)) return;
-    clearDay(targetDate);
-    refresh();
-    onMealDeleted?.();
+    onClearDay(targetDate);
   };
 
   const toggleType = (type: MealType) => {
@@ -112,7 +143,7 @@ export default function DayMealLog({ date, dailyCalorieTarget = 2000, onMealDele
         if (!records.length) return null;
         const isOpen = expandedTypes.has(type);
         const { emoji, label } = MEAL_LABELS[type];
-        const typeCal = records.reduce((s, r) => s + r.analysis.calories, 0);
+        const typeCal = records.reduce((s, r) => s + (r.calories || 0), 0);
 
         return (
           <div key={type} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -150,24 +181,23 @@ export default function DayMealLog({ date, dailyCalorieTarget = 2000, onMealDele
 }
 
 function MealRow({ record, onDelete }: { record: MealRecord; onDelete: () => void }) {
-  const { analysis } = record;
   return (
     <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-0">
       <img
         src={record.image}
         className="w-12 h-12 object-cover rounded-xl flex-shrink-0"
-        alt={analysis.foodName}
+        alt={record.foodName}
       />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-800 truncate">{analysis.foodName}</p>
+        <p className="text-sm font-medium text-gray-800 truncate">{record.foodName}</p>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-xs text-gray-500">{analysis.calories} kcal</span>
-          {analysis.weightGrams > 0 && (
-            <span className="text-xs text-gray-400">· {analysis.weightGrams}g</span>
+          <span className="text-xs text-gray-500">{record.calories} kcal</span>
+          {record.weightGrams > 0 && (
+            <span className="text-xs text-gray-400">· {record.weightGrams}g</span>
           )}
-          {analysis.cookingMethod && (
+          {record.cookingMethod && (
             <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">
-              {analysis.cookingMethod}
+              {record.cookingMethod}
             </span>
           )}
         </div>

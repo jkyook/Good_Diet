@@ -32,7 +32,7 @@ export default async function handler(req: ApiReq, res: ApiRes) {
   // Vercel은 Content-Type: application/json 인 경우 req.body 자동 파싱.
   // 로컬 vite proxy 환경 등에서 미파싱이면 수동 파싱.
   const body: AnalyzeRequest = await readBody(req);
-  const { imageData, age, gender, existingMealsCount = 0, mode = 'detailed', provider = 'groq' } = body;
+  const { imageData, age, gender, existingMealsCount = 0, mode = 'detailed', provider = 'claude' } = body;
 
   if (!age || !gender) {
     res.statusCode = 400;

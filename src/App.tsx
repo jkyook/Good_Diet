@@ -21,12 +21,12 @@ import {
   saveMeal, loadHistory, deleteMeal as dbDeleteMeal, clearHistory as dbClearHistory,
   SupabaseUser, SUPABASE_AVAILABLE,
 } from './services/supabaseService';
-import { addMeal as localAddMeal } from './services/mealStore';
 import BatchAnalyzer from './components/BatchAnalyzer';
 import DayMealLog from './components/DayMealLog';
 import AnalysisResultCard from './components/AnalysisResultCard';
 import AnalysisProgress from './components/AnalysisProgress';
 import type { AnalysisStep } from './components/AnalysisProgress.types';
+import type { BatchAnalysisCompletion } from './components/BatchAnalyzer';
 import type { MealRecord } from './types';
 
 type Gender = 'male' | 'female';
@@ -83,6 +83,13 @@ function compressImage(file: File): Promise<string> {
   });
 }
 
+function localDateKey(input: string | Date): string {
+  const d = input instanceof Date ? input : new Date(input);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
 export default function App() {
   // --- Profile ---
   const [age, setAge] = useState(30);
@@ -96,7 +103,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('quick');
   const [mealType, setMealType] = useState<MealType>('lunch');
-  const [provider, setProvider] = useState<AIProvider>('groq');
+  const [provider, setProvider] = useState<AIProvider>('claude');
   const [health, setHealth] = useState<ProviderHealth>({ gemini: false, claude: false, groq: false });
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -201,7 +208,7 @@ export default function App() {
       .then(h => {
         setHealth(h);
         // 기본 프로바이더 자동 선택: 사용 가능한 첫 번째
-        setProvider(prev => h[prev] ? prev : (h.groq ? 'groq' : h.claude ? 'claude' : h.gemini ? 'gemini' : prev));
+        setProvider(prev => h[prev] ? prev : (h.claude ? 'claude' : h.gemini ? 'gemini' : h.groq ? 'groq' : prev));
       })
       .catch(err => console.error('[health] 서버 가용성 조회 실패:', err));
   }, []);
@@ -412,10 +419,6 @@ export default function App() {
       }
 
       setHistory(prev => [...results, ...prev]);
-      // localStore에도 저장 (오프라인/모바일 대비)
-      for (const r of results) {
-        localAddMeal(r.image, r.mealType, r);
-      }
       if (user) {
         for (const r of results) await saveMeal(r, user.id);
       }
@@ -432,13 +435,29 @@ export default function App() {
     }
   };
 
-  const deleteRecord = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    showConfirm('이 기록을 삭제하시겠습니까?', async () => {
-      if (user) await dbDeleteMeal(id);
-      setHistory(prev => prev.filter(m => m.id !== id));
-      if (selectedMeal?.id === id) setSelectedMeal(null);
-      showToast('기록이 삭제되었습니다.');
+  const deleteRecordById = async (id: string) => {
+    if (user) await dbDeleteMeal(id);
+    setHistory(prev => prev.filter(m => m.id !== id));
+    if (selectedMeal?.id === id) setSelectedMeal(null);
+    showToast('기록이 삭제되었습니다.');
+  };
+
+  const deleteRecord = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    showConfirm('이 기록을 삭제하시겠습니까?', () => {
+      void deleteRecordById(id);
+    });
+  };
+
+  const clearDayRecords = (targetDate: string) => {
+    showConfirm(`${targetDate} 식단을 모두 삭제할까요?`, async () => {
+      const ids = history.filter(m => localDateKey(m.date) === targetDate).map(m => m.id);
+      if (user) {
+        for (const id of ids) await dbDeleteMeal(id);
+      }
+      setHistory(prev => prev.filter(m => localDateKey(m.date) !== targetDate));
+      if (selectedMeal && localDateKey(selectedMeal.date) === targetDate) setSelectedMeal(null);
+      showToast('해당 날짜 기록이 삭제되었습니다.');
     });
   };
 
@@ -876,9 +895,9 @@ export default function App() {
                         <label className="text-[10px] font-black uppercase text-slate-500">AI 엔진</label>
                         <div className="flex border-[3px] border-slate-900 shadow-[3px_3px_0_0_rgba(15,23,42,1)] overflow-hidden">
                           {([
-                            { value: 'gemini' as AIProvider, icon: '🔵', name: 'Gemini', sub: 'Google · Flash', available: health.gemini },
                             { value: 'claude' as AIProvider, icon: '🟠', name: 'Claude', sub: 'Anthropic', available: health.claude },
-                            { value: 'groq' as AIProvider, icon: '🟢', name: 'Groq', sub: '무료', available: health.groq },
+                            { value: 'gemini' as AIProvider, icon: '🔵', name: 'Gemini', sub: 'Google · Flash', available: health.gemini },
+                            { value: 'groq' as AIProvider, icon: '🟢', name: 'Grok', sub: 'xAI · fallback', available: health.groq },
                           ]).map(({ value, icon, name, sub, available }, i) => (
                             <button key={value} onClick={() => available && setProvider(value)}
                               title={available ? undefined : `.env에 API 키를 추가해주세요`}
@@ -928,17 +947,19 @@ export default function App() {
                         gender={gender}
                         provider={provider}
                         mealType={mealType}
-                        onComplete={results => {
-                          setHistory(prev => [
-                            ...results.map(r => ({
-                              ...r,
+                        onComplete={(items: BatchAnalysisCompletion[]) => {
+                          const records: MealRecord[] = items.map(({ result, image }) => ({
+                              ...result,
                               id: `batch-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
-                              image: '',
+                              image,
                               mealType,
-                            })),
-                            ...prev,
-                          ]);
-                          showToast(`${results.length}개 일괄 분석 완료!`);
+                          }));
+                          setHistory(prev => [...records, ...prev]);
+                          if (user) {
+                            void Promise.all(records.map(r => saveMeal(r, user.id)));
+                          }
+                          if (records[0]) setSelectedMeal(records[0]);
+                          showToast(`${records.length}개 일괄 분석 완료!`);
                         }}
                       />
 
@@ -963,8 +984,13 @@ export default function App() {
               className="p-4 space-y-4"
               onClick={() => setActiveItemId(null)}
             >
-              {/* 오늘 식단 요약 (mealStore 기반) */}
-              <DayMealLog dailyCalorieTarget={dailyCalorieTarget} onMealDeleted={() => {}} />
+              {/* 오늘 식단 요약 */}
+              <DayMealLog
+                records={history}
+                dailyCalorieTarget={dailyCalorieTarget}
+                onDeleteMeal={id => deleteRecord(id)}
+                onClearDay={clearDayRecords}
+              />
 
               <div className="flex justify-between items-center mt-2">
                 <p className="text-[10px] font-black uppercase text-slate-500">{history.length} Records</p>

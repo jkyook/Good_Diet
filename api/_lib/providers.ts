@@ -26,7 +26,7 @@ export const PROVIDER_LABELS: Record<AIProvider, string> = {
   gemini: 'Gemini 1.5 Flash',
 };
 
-export const FALLBACK_ORDER: AIProvider[] = ['groq', 'claude', 'gemini'];
+export const FALLBACK_ORDER: AIProvider[] = ['claude', 'gemini', 'groq'];
 
 async function callGemini(base64Data: string, prompt: string): Promise<string> {
   const response = await geminiAI!.models.generateContent({

@@ -2,7 +2,6 @@ import React, { useState, useRef } from 'react';
 import { Images, X, Loader2, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { analyzeFoodBatch, AnalysisResult, MealType, AIProvider, AnalysisMode } from '../services/geminiService';
 import { pickMultipleFromGallery, pickMultipleFromInput } from '../services/cameraService';
-import { addMeal } from '../services/mealStore';
 import { Capacitor } from '@capacitor/core';
 
 interface BatchResult {
@@ -11,12 +10,17 @@ interface BatchResult {
   error?: string;
 }
 
+export interface BatchAnalysisCompletion {
+  image: string;
+  result: AnalysisResult;
+}
+
 interface Props {
   age: number;
   gender: 'male' | 'female';
   provider: AIProvider;
   mealType: MealType;
-  onComplete: (results: AnalysisResult[]) => void;
+  onComplete: (results: BatchAnalysisCompletion[]) => void;
 }
 
 export default function BatchAnalyzer({ age, gender, provider, mealType, onComplete }: Props) {
@@ -46,36 +50,39 @@ export default function BatchAnalyzer({ age, gender, provider, mealType, onCompl
     setIsAnalyzing(true);
     setProgress({ done: 0, total: selectedImages.length });
     const results: BatchResult[] = selectedImages.map(img => ({ imageUrl: img }));
+    const completedItems: BatchAnalysisCompletion[] = [];
     setBatchResults([...results]);
 
-    await analyzeFoodBatch(
-      selectedImages,
-      age,
-      gender,
-      'quick' as AnalysisMode,
-      provider,
-      (completed, total, result) => {
-        setProgress({ done: completed, total });
-        setBatchResults(prev => {
-          const updated = [...prev];
-          updated[completed - 1] = {
-            imageUrl: selectedImages[completed - 1],
-            result,
-            error: result ? undefined : '분석 실패',
-          };
-          return updated;
-        });
-        if (result) {
-          addMeal(selectedImages[completed - 1], mealType, result);
-        }
-      },
-    );
-
-    setIsAnalyzing(false);
-    const succeeded = results
-      .map((_, i) => batchResults[i]?.result)
-      .filter((r): r is AnalysisResult => !!r);
-    onComplete(succeeded);
+    try {
+      await analyzeFoodBatch(
+        selectedImages,
+        age,
+        gender,
+        'quick' as AnalysisMode,
+        provider,
+        (completed, total, result) => {
+          const image = selectedImages[completed - 1];
+          setProgress({ done: completed, total });
+          setBatchResults(prev => {
+            const updated = [...prev];
+            updated[completed - 1] = {
+              imageUrl: image,
+              result,
+              error: result ? undefined : '분석 실패',
+            };
+            return updated;
+          });
+          if (result) {
+            completedItems.push({ image, result });
+          }
+        },
+      );
+      onComplete(completedItems);
+    } catch {
+      setBatchResults(prev => prev.map(item => item.result ? item : { ...item, error: '분석 실패' }));
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const successCount = batchResults.filter(r => r.result).length;

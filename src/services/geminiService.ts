@@ -114,12 +114,12 @@ const API_BASE = ((import.meta as ImportMeta & { env?: Record<string, string> })
 
 // --- 프로바이더 메타 (런타임 상수) ---
 export const PROVIDER_LABELS: Record<AIProvider, string> = {
-  groq: 'Groq Llama 4 Scout',
+  groq: 'xAI Grok 2 Vision',
   claude: 'Claude Haiku 4.5',
   gemini: 'Gemini 1.5 Flash',
 };
 
-export const FALLBACK_ORDER: AIProvider[] = ['groq', 'claude', 'gemini'];
+export const FALLBACK_ORDER: AIProvider[] = ['claude', 'gemini', 'groq'];
 
 // --- 헬스 체크로 채우는 가용성 정보 ---
 // 키는 서버에만 있으므로 클라이언트는 /api/health 응답으로만 가용성 판별.

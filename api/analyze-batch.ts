@@ -40,7 +40,7 @@ export default async function handler(req: ApiReq, res: ApiRes) {
   }
 
   const body: BatchRequest = await readBody(req);
-  const { images, age, gender, mode = 'quick', provider = 'groq' } = body;
+  const { images, age, gender, mode = 'quick', provider = 'claude' } = body;
 
   if (!Array.isArray(images) || images.length === 0 || !age || !gender) {
     res.statusCode = 400;
