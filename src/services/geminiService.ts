@@ -289,7 +289,7 @@ export const analyzeFoodBatch = async (
   gender: 'male' | 'female',
   mode: AnalysisMode = 'quick',
   provider: AIProvider = 'groq',
-  onProgress?: (completed: number, total: number, result?: AnalysisResult) => void,
+  onProgress?: (completed: number, total: number, result?: AnalysisResult, error?: string) => void,
 ): Promise<AnalysisResult[]> => {
   let res: Response;
   try {
@@ -316,7 +316,7 @@ export const analyzeFoodBatch = async (
     if (ev.type === 'item') {
       const sanitized = ev.result ? sanitizeResult(ev.result) : undefined;
       if (sanitized) results.push(sanitized);
-      onProgress?.(ev.index + 1, images.length, sanitized);
+      onProgress?.(ev.index + 1, images.length, sanitized, ev.error);
     } else if (ev.type === 'progress') {
       // progress 이벤트는 onProgress 가 item 에서 이미 호출됨
     } else if (ev.type === 'error') {

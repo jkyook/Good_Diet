@@ -50,6 +50,12 @@ export default function BatchAnalyzer({ age, gender, provider, mealType, onCompl
     setSelectedImages(prev => prev.filter((_, i) => i !== idx));
   };
 
+  const handleResetBatch = () => {
+    setSelectedImages([]);
+    setBatchResults([]);
+    setProgress({ done: 0, total: 0 });
+  };
+
   const handleAnalyze = async () => {
     if (!selectedImages.length) return;
     setIsAnalyzing(true);
@@ -65,7 +71,7 @@ export default function BatchAnalyzer({ age, gender, provider, mealType, onCompl
         gender,
         'quick' as AnalysisMode,
         provider,
-        (completed, total, result) => {
+        (completed, total, result, error) => {
           const image = selectedImages[completed - 1];
           setProgress({ done: completed, total });
           setBatchResults(prev => {
@@ -73,7 +79,7 @@ export default function BatchAnalyzer({ age, gender, provider, mealType, onCompl
             updated[completed - 1] = {
               imageUrl: image,
               result,
-              error: result ? undefined : '분석 실패',
+              error: result ? undefined : (error || '분석 실패'),
             };
             return updated;
           });
@@ -83,8 +89,9 @@ export default function BatchAnalyzer({ age, gender, provider, mealType, onCompl
         },
       );
       onComplete(completedItems);
-    } catch {
-      setBatchResults(prev => prev.map(item => item.result ? item : { ...item, error: '분석 실패' }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '분석 실패';
+      setBatchResults(prev => prev.map(item => item.result ? item : { ...item, error: msg }));
     } finally {
       setIsAnalyzing(false);
     }
@@ -174,20 +181,30 @@ export default function BatchAnalyzer({ age, gender, provider, mealType, onCompl
             </p>
           )}
 
-          {/* 결과 리스트 */}
-          {batchResults.some(r => r.result) && (
+          {/* 결과 리스트 (성공 + 실패 모두) */}
+          {batchResults.length > 0 && (
             <div className="space-y-2 max-h-48 overflow-y-auto">
-              {batchResults.filter(r => r.result).map((r, i) => (
-                <div key={i} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl">
-                  <img src={r.imageUrl} className="w-10 h-10 object-cover rounded-lg flex-shrink-0" alt="" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{r.result!.foodName}</p>
-                    <p className="text-xs text-gray-500">{r.result!.calories} kcal · {r.result!.weightGrams}g</p>
+              {batchResults.map((r, i) => (
+                r.result ? (
+                  <div key={i} className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl">
+                    <img src={r.imageUrl} className="w-10 h-10 object-cover rounded-lg flex-shrink-0" alt="" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{r.result.foodName}</p>
+                      <p className="text-xs text-gray-500">{r.result.calories} kcal · {r.result.weightGrams}g</p>
+                    </div>
+                    <span className="ml-auto text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full flex-shrink-0">
+                      {r.result.category}
+                    </span>
                   </div>
-                  <span className="ml-auto text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full flex-shrink-0">
-                    {r.result!.category}
-                  </span>
-                </div>
+                ) : r.error ? (
+                  <div key={i} className="flex items-center gap-3 p-2 bg-red-50 rounded-xl">
+                    <img src={r.imageUrl} className="w-10 h-10 object-cover rounded-lg flex-shrink-0 opacity-60" alt="" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-red-700">분석 실패</p>
+                      <p className="text-[11px] text-red-500 truncate" title={r.error}>{r.error}</p>
+                    </div>
+                  </div>
+                ) : null
               ))}
             </div>
           )}
@@ -199,6 +216,16 @@ export default function BatchAnalyzer({ age, gender, provider, mealType, onCompl
               className="w-full py-2.5 bg-emerald-500 text-white rounded-xl text-sm font-semibold hover:bg-emerald-600 active:scale-95 transition-all"
             >
               {selectedImages.length}개 사진 일괄 분석
+            </button>
+          )}
+
+          {/* 다시 일괄 분석 버튼 (분석 완료 후) */}
+          {!isAnalyzing && batchResults.length > 0 && (
+            <button
+              onClick={handleResetBatch}
+              className="w-full py-2.5 bg-white border-2 border-emerald-400 text-emerald-600 rounded-xl text-sm font-semibold hover:bg-emerald-50 active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <RotateCcw size={14} /> 새 사진으로 다시 분석
             </button>
           )}
         </div>
