@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { AnalysisMode, AIProvider, MealType, AnalysisResult } from './geminiService';
+import { AnalysisMode, AIProvider, MealType } from './geminiService';
 import type { MealRecord } from '../types';
 
 // ── 타입 정의 ──────────────────────────────────────────────────────────────────
