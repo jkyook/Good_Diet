@@ -27,15 +27,10 @@ import DayMealLog from './components/DayMealLog';
 import AnalysisResultCard from './components/AnalysisResultCard';
 import AnalysisProgress from './components/AnalysisProgress';
 import type { AnalysisStep } from './components/AnalysisProgress.types';
+import type { MealRecord } from './types';
 
 type Gender = 'male' | 'female';
 type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active';
-
-interface MealRecord extends AnalysisResult {
-  id: string;
-  image: string;
-  mealType: MealType;
-}
 
 interface ConfirmDialog {
   message: string;
