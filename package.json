@@ -11,7 +11,8 @@
     "build:mobile": "vite build --mode mobile",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:filter": "tsx scripts/test-content-filter.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
