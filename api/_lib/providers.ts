@@ -69,7 +69,7 @@ async function callGroq(base64Data: string, prompt: string, mode: AnalysisMode):
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'grok-2-vision-1212',
+      model: 'grok-4-fast-non-reasoning',
       messages: [
         { role: 'system', content: FOOD_ANALYSIS_SYSTEM },
         {
