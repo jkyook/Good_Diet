@@ -2,7 +2,7 @@
 // 모바일(Capacitor) 빌드는 절대 URL 로 /api 를 호출하므로 cross-origin 요청이 됨.
 // Capacitor iOS: capacitor://localhost, Android: https://localhost
 // 웹: same-origin 이지만 명시적으로 허용해 두면 dev 서버(예: 다른 포트)에서도 동작.
-import type { ApiReq, ApiRes } from './types';
+import type { ApiReq, ApiRes } from './types.js';
 
 const ALLOWED_ORIGINS = new Set<string>([
   'capacitor://localhost',

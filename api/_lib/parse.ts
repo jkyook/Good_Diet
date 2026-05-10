@@ -1,5 +1,5 @@
 // 서버 측 JSON 추출/파싱. 클라이언트와 동일한 알고리즘.
-import type { AIProvider, AnalysisMode } from './types';
+import type { AIProvider, AnalysisMode } from './types.js';
 
 export type FoodCategory = '고기' | '야채' | '면' | '기타';
 

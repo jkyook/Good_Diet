@@ -1,7 +1,7 @@
 // 단순 in-memory 토큰 버킷. 서버리스 인스턴스가 cold-start 시 초기화되므로
 // 엄격한 글로벌 한도가 아닌 인스턴스별 도배 방지 가드 정도의 효과만 가짐.
 // (정밀 한도는 추후 Vercel KV / Upstash 도입 시 강화)
-import type { ApiReq } from './types';
+import type { ApiReq } from './types.js';
 
 interface Bucket {
   tokens: number;

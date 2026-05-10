@@ -1,12 +1,12 @@
-import type { ApiReq, ApiRes, AnalyzeRequest, AIProvider } from './_lib/types';
+import type { ApiReq, ApiRes, AnalyzeRequest, AIProvider } from './_lib/types.js';
 import {
   callProvider, FALLBACK_ORDER, PROVIDER_AVAILABLE, PROVIDER_LABELS, isQuotaError,
-} from './_lib/providers';
-import { parseResult, JSONParseError } from './_lib/parse';
-import { buildQuickPrompt, buildDetailedPrompt } from './_lib/prompt';
-import { checkRateLimit } from './_lib/rateLimit';
-import { handlePreflight } from './_lib/cors';
-import { validateImage } from './_lib/validate';
+} from './_lib/providers.js';
+import { parseResult, JSONParseError } from './_lib/parse.js';
+import { buildQuickPrompt, buildDetailedPrompt } from './_lib/prompt.js';
+import { checkRateLimit } from './_lib/rateLimit.js';
+import { handlePreflight } from './_lib/cors.js';
+import { validateImage } from './_lib/validate.js';
 
 function send(res: ApiRes, payload: unknown) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);

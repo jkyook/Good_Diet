@@ -1,6 +1,6 @@
-import type { ApiReq, ApiRes } from './_lib/types';
-import { PROVIDER_AVAILABLE } from './_lib/providers';
-import { handlePreflight } from './_lib/cors';
+import type { ApiReq, ApiRes } from './_lib/types.js';
+import { PROVIDER_AVAILABLE } from './_lib/providers.js';
+import { handlePreflight } from './_lib/cors.js';
 
 export default function handler(req: ApiReq, res: ApiRes) {
   if (handlePreflight(req, res)) return;

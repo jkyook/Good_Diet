@@ -1,8 +1,8 @@
 // 서버 측 AI 프로바이더 호출 — 키는 process.env 에서만 읽고 클라이언트에 노출되지 않음.
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
-import type { AIProvider, AnalysisMode } from './types';
-import { FOOD_ANALYSIS_SYSTEM } from './prompt';
+import type { AIProvider, AnalysisMode } from './types.js';
+import { FOOD_ANALYSIS_SYSTEM } from './prompt.js';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
