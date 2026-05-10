@@ -20,6 +20,19 @@ export interface IngredientDetail {
   fat: number;
 }
 
+export interface ExerciseRec {
+  name: string;
+  duration: string;
+  burnCalories: number;
+}
+
+export interface Recommendations {
+  nextMeals: string[];
+  exercises: ExerciseRec[];
+  desserts: string[];
+  avoidFoods: string[];
+}
+
 export interface PortionEstimate {
   method: string;
   referenceObject: string;
@@ -79,6 +92,7 @@ export interface AnalysisResult {
   improvements?: string[];
   warnings?: string[];
   confidence?: '높음' | '중간' | '낮음';
+  recommendations?: Recommendations;
 }
 
 export interface StepEvent {
