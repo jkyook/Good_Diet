@@ -75,12 +75,13 @@ export default async function handler(req: ApiReq, res: ApiRes) {
   for (const cur of ordered) {
     try {
       send(res, { type: 'step', index: 0, detail: `${PROVIDER_LABELS[cur]} 연결 완료` });
+      // T-035: step 1을 AI 호출 직전에 사전 emit. 의미는 "음식 감지 완료"가 아니라 "AI 응답 대기 중".
+      send(res, { type: 'step', index: 1, detail: `${PROVIDER_LABELS[cur]} 분석 요청 중` });
       const text = await callProvider(cur, base64Data, prompt, mode);
       const result = parseResult(text, mode, cur);
 
-      send(res, { type: 'step', index: 1, detail: `"${result.foodName}" 감지됨` });
       send(res, { type: 'step', index: 2, detail: `${result.calories} kcal | ${result.weightGrams}g 산출됨` });
-      send(res, { type: 'step', index: 3, detail: result.portionEstimate ? `${result.portionEstimate.referenceObject} 기준 추정` : '분류 완료' });
+      send(res, { type: 'step', index: 3, detail: result.portionEstimate ? `${result.portionEstimate.referenceObject} 기준 추정` : `"${result.foodName}" 분류 완료` });
       send(res, { type: 'step', index: 4, detail: `신뢰도: ${result.confidence ?? '중간'}` });
       send(res, { type: 'done', result });
       res.end();
