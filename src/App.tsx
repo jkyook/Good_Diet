@@ -151,6 +151,7 @@ export default function App() {
   const [selectedDateKey, setSelectedDateKey] = useState(() => localDateKey(new Date()));
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [batchLoading, setBatchLoading] = useState(false);
 
   // --- Overlays ---
   const [toast, setToast] = useState<Toast | null>(null);
@@ -560,7 +561,7 @@ export default function App() {
     aiComment: '',
   }), [todayMeals, dailyCalorieTarget]);
 
-  const isAnalyzing = loading;
+  const isAnalyzing = loading || batchLoading;
   const fabHidden = isAnalyzing || (mainTab === 'analyze' && !!selectedMeal);
 
   const maxWeeklyCalories = Math.max(...weeklyStats.map(d => d.calories), dailyCalorieTarget, 1);
@@ -1065,6 +1066,7 @@ export default function App() {
                         gender={gender}
                         provider={provider}
                         mealType={mealType}
+                        onLoadingChange={setBatchLoading}
                         onComplete={(items: BatchAnalysisCompletion[]) => {
                           const records: MealRecord[] = items.map(({ result, image }) => ({
                               ...result,

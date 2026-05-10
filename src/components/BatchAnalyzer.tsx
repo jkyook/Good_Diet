@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Images, X, Loader2, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Images, X, Loader2, CheckCircle, AlertCircle, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 import { analyzeFoodBatch, AnalysisResult, MealType, AIProvider, AnalysisMode } from '../services/geminiService';
 import { pickMultipleFromGallery, pickMultipleFromInput } from '../services/cameraService';
 import { Capacitor } from '@capacitor/core';
@@ -21,14 +21,19 @@ interface Props {
   provider: AIProvider;
   mealType: MealType;
   onComplete: (results: BatchAnalysisCompletion[]) => void;
+  onLoadingChange?: (loading: boolean) => void;
 }
 
-export default function BatchAnalyzer({ age, gender, provider, mealType, onComplete }: Props) {
+export default function BatchAnalyzer({ age, gender, provider, mealType, onComplete, onLoadingChange }: Props) {
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    onLoadingChange?.(isAnalyzing);
+  }, [isAnalyzing, onLoadingChange]);
 
   const handlePickImages = async () => {
     const isNative = Capacitor.isNativePlatform();
