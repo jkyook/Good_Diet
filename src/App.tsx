@@ -126,7 +126,8 @@ export default function App() {
   // --- Upload & Analysis ---
   const [images, setImages] = useState<{ id: string; url: string; file: File }[]>([]);
   const [loading, setLoading] = useState(false);
-  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('quick');
+  // T-067 (2): 분석 모드 UI 숨김 + 'detailed' 고정 (분석 결과 풍부함 우선).
+  const [analysisMode] = useState<AnalysisMode>('detailed');
   const [mealType, setMealType] = useState<MealType>(() => inferMealTypeByTime());
   const [provider, setProvider] = useState<AIProvider>('groq');
   const [health, setHealth] = useState<ProviderHealth>({ gemini: false, claude: false, groq: false });
@@ -1076,55 +1077,8 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* AI 엔진 — T-059: Grok 활성 + Claude/Gemini는 표시는 하되 disabled.
-                          Claude/Gemini는 health 체크 결과와 무관하게 강제 disabled (사용자 결정 — 단일 엔진 운영).
-                          토글 자체는 보존 (재활성화 시 enabled=true로). */}
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase text-slate-500">AI 엔진</label>
-                        <div className="flex border-[3px] border-slate-900 shadow-[3px_3px_0_0_rgba(15,23,42,1)] overflow-hidden">
-                          {([
-                            { value: 'groq'   as AIProvider, icon: '🟢', name: 'Grok',   sub: 'xAI',           enabled: true },
-                            { value: 'claude' as AIProvider, icon: '🟠', name: 'Claude', sub: 'Anthropic',     enabled: false },
-                            { value: 'gemini' as AIProvider, icon: '🔵', name: 'Gemini', sub: 'Google',        enabled: false },
-                          ]).map(({ value, icon, name, sub, enabled }, i) => {
-                            const active = provider === value && enabled;
-                            return (
-                              <button
-                                key={value}
-                                type="button"
-                                onClick={() => { if (enabled) setProvider(value); }}
-                                disabled={!enabled}
-                                aria-disabled={!enabled}
-                                title={enabled ? undefined : '준비 중'}
-                                className={`flex-1 py-2.5 flex items-center justify-center gap-1 transition-colors ${i > 0 ? 'border-l-[3px] border-slate-900' : ''} ${!enabled ? 'opacity-40 cursor-not-allowed bg-slate-50 text-slate-400' : active ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}
-                              >
-                                <span className="text-sm leading-none" aria-hidden="true">{icon}</span>
-                                <div className="text-left">
-                                  <p className="text-[10px] font-black uppercase leading-tight">{name}</p>
-                                  <p className={`hidden sm:block text-[8px] font-bold leading-tight ${active ? 'text-orange-300' : !enabled ? 'text-slate-400' : 'text-slate-400'}`}>
-                                    {enabled ? sub : '준비 중'}
-                                  </p>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* 분석 모드 */}
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase text-slate-500">분석 모드</label>
-                        <div className="flex border-[3px] border-slate-900 shadow-[3px_3px_0_0_rgba(15,23,42,1)] overflow-hidden">
-                          {([['quick', '⚡ 퀵', '빠름'], ['detailed', '📋 상세', '상세']] as const).map(([mode, title, sub], i) => (
-                            <button key={mode} onClick={() => setAnalysisMode(mode)}
-                              className={`flex-1 py-3 flex flex-col items-center gap-0.5 transition-colors ${i > 0 ? 'border-l-[3px] border-slate-900' : ''} ${analysisMode === mode ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}
-                            >
-                              <span className="text-sm font-black uppercase">{title}</span>
-                              <span className={`text-[8px] font-bold uppercase ${analysisMode === mode ? 'text-orange-300' : 'text-slate-400'}`}>{sub}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                      {/* T-067 (1)(2): AI 엔진 + 분석 모드 UI 숨김. provider='groq' / analysisMode='detailed' 고정.
+                          타입/호출 분기는 보존 (재활성화 시 본 블록만 복원). */}
 
                       {/* 에러 */}
                       {error && (
@@ -1145,7 +1099,7 @@ export default function App() {
                       >
                         {loading ? (
                           <span className="flex items-center justify-center gap-2"><RefreshCw className="w-4 h-4 animate-spin" /> 분석 중...</span>
-                        ) : analysisMode === 'quick' ? '⚡ Quick Analysis' : '📋 Full Analysis'}
+                        ) : 'AI 분석 시작'}
                       </button>
                     </div>
                   </motion.div>
