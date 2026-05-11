@@ -4,6 +4,14 @@ import dotenv from 'dotenv';
 import analyzeHandler from './api/analyze.js';
 import analyzeBatchHandler from './api/analyze-batch.js';
 import healthHandler from './api/health.js';
+import meHandler from './api/me.js';
+import calChargeAdHandler from './api/cal/charge/ad.js';
+import calPaymentInitHandler from './api/cal/charge/payment/init.js';
+import calPaymentWebhookHandler from './api/cal/charge/payment/webhook.js';
+import calTransactionsHandler from './api/cal/transactions.js';
+import adminUsersHandler from './api/admin/users.js';
+import adminAdjustHandler from './api/admin/cal/adjust.js';
+import adminStatsHandler from './api/admin/stats.js';
 import type { ApiReq, ApiRes } from './api/_lib/types.js';
 
 dotenv.config();
@@ -28,6 +36,14 @@ function run(handler: (req: ApiReq, res: ApiRes) => unknown) {
 app.all('/api/health', run(healthHandler));
 app.all('/api/analyze', run(analyzeHandler));
 app.all('/api/analyze-batch', run(analyzeBatchHandler));
+app.all('/api/me', run(meHandler));
+app.all('/api/cal/charge/ad', run(calChargeAdHandler));
+app.all('/api/cal/charge/payment/init', run(calPaymentInitHandler));
+app.all('/api/cal/charge/payment/webhook', run(calPaymentWebhookHandler));
+app.all('/api/cal/transactions', run(calTransactionsHandler));
+app.all('/api/admin/users', run(adminUsersHandler));
+app.all('/api/admin/cal/adjust', run(adminAdjustHandler));
+app.all('/api/admin/stats', run(adminStatsHandler));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) + 1 : 3001;
 app.listen(PORT, () => {
