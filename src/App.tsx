@@ -44,6 +44,10 @@ import AdRewardModal from './components/cal/AdRewardModal';
 import MealCardMenu from './components/meal/MealCardMenu';
 import MealEditModal from './components/meal/MealEditModal';
 import AnalyzeModeTabs from './components/analyze/AnalyzeModeTabs';
+import ExerciseRecommendCard from './components/recommend/ExerciseRecommendCard';
+import SnackRecommendCard from './components/recommend/SnackRecommendCard';
+import { recommendExercise } from './utils/exerciseRecommend';
+import { recommendSnack } from './utils/snackRecommend';
 import { calcDailyScore } from './services/scoreService';
 import { compressImage, fileToDataUrl } from './utils/imageCompress';
 import type { AnalysisStep } from './components/AnalysisProgress.types';
@@ -605,6 +609,20 @@ export default function App() {
     aiComment: '',
   }), [todayMeals, dailyCalorieTarget]);
 
+  // 운동/간식 추천 (선택된 날짜 기준, 정적 룰 — cal 차감 X)
+  const exerciseRecs = useMemo(() => {
+    const excess = selectedDateCalories - dailyCalorieTarget;
+    return recommendExercise(excess);
+  }, [selectedDateCalories, dailyCalorieTarget]);
+
+  const snackRec = useMemo(() => recommendSnack({
+    todayKcalConsumed: selectedDateCalories,
+    dailyKcalTarget: dailyCalorieTarget,
+    todayMeals: selectedDateMeals,
+  }), [selectedDateCalories, dailyCalorieTarget, selectedDateMeals]);
+
+  const excessKcal = selectedDateCalories - dailyCalorieTarget;
+
   const isAnalyzing = loading || batchLoading;
   const fabHidden = isAnalyzing || (mainTab === 'analyze' && !!selectedMeal);
 
@@ -899,6 +917,14 @@ export default function App() {
                   )}
                 </div>
               </section>
+
+              {/* T-055d 운동/간식 추천 — 노출 조건 배타적: 초과면 운동, 여유면 간식 */}
+              {excessKcal > 0 && exerciseRecs.length > 0 && (
+                <ExerciseRecommendCard excessKcal={excessKcal} exercises={exerciseRecs} />
+              )}
+              {excessKcal <= 0 && snackRec.snacks.length > 0 && (
+                <SnackRecommendCard snacks={snackRec.snacks} missing={snackRec.missing} />
+              )}
 
               <section className="space-y-3">
                 <div className="flex items-center justify-between px-1">
