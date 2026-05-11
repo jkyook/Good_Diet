@@ -102,8 +102,11 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
           <h2 className="text-lg font-black text-gray-900">{meal.foodName}</h2>
           <div className="flex flex-wrap gap-1.5 mt-2">
             {meal.portionCount && meal.portionCount > 1 && (
-              <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-black">
-                🍽 {meal.portionCount === 4 ? '4+' : meal.portionCount}인분
+              <span
+                className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-black"
+                title={`원본 ${meal.portionCount === 4 ? '4+' : meal.portionCount}인분 — 1인분 기준으로 환산된 영양 정보`}
+              >
+                🍽 1인분 기준 (원본 {meal.portionCount === 4 ? '4+' : meal.portionCount}인분)
               </span>
             )}
             {meal.detectedFoods?.map(f => (

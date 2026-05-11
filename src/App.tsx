@@ -21,6 +21,7 @@ import { fetchMe, chargeAd, initPayment, type MeResponse } from './services/calS
 import { updateAccount } from './services/supabaseService';
 import { type CalPackageId } from './config/packages';
 import { inferMealTypeByTime } from './utils/mealTime';
+import { divideByPortion } from './utils/portion';
 import {
   signIn, signUp, signOut, getSession, onAuthChange,
   saveMeal, loadHistory, deleteMeal as dbDeleteMeal, clearHistory as dbClearHistory,
@@ -465,7 +466,9 @@ export default function App() {
         // 폴백은 서버(/api/analyze)에서 처리됨 — 클라이언트는 한 번만 호출
         const analysis = await analyzeFood(base64, age, gender, inHistory + inBatch, analysisMode, provider, onEvent);
         // T-058: analysis.provider 변경 사실은 사용자에게 노출하지 않음.
-        results.push({ ...analysis, id: img.id, image: base64, mealType, portionCount });
+        // T-068: N인분이면 영양/양 필드를 1인분 기준으로 환산해서 DB에 저장. portion_count는 원본 N 보존.
+        const perPortion = divideByPortion(analysis, portionCount);
+        results.push({ ...perPortion, id: img.id, image: base64, mealType, portionCount });
       }
 
       setHistory(prev => [...results, ...prev]);
@@ -1001,13 +1004,17 @@ export default function App() {
                       mealType={mealType}
                       onLoadingChange={setBatchLoading}
                       onComplete={(items: BatchAnalysisCompletion[]) => {
-                        const records: MealRecord[] = items.map(({ result, image }) => ({
-                            ...result,
+                        const records: MealRecord[] = items.map(({ result, image }) => {
+                          // T-068: 배치도 동일 환산. 배치 N장이 모두 같은 portionCount 적용 (사용자 선택).
+                          const perPortion = divideByPortion(result, portionCount);
+                          return {
+                            ...perPortion,
                             id: `batch-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
                             image,
                             mealType,
                             portionCount,
-                        }));
+                          };
+                        });
                         setHistory(prev => [...records, ...prev]);
                         if (user) {
                           void Promise.all(records.map(r => saveMeal(r, user.id)));
