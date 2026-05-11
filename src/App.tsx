@@ -23,6 +23,7 @@ import { inferMealTypeByTime } from './utils/mealTime';
 import {
   signIn, signUp, signOut, getSession, onAuthChange,
   saveMeal, loadHistory, deleteMeal as dbDeleteMeal, clearHistory as dbClearHistory,
+  updateMealClassification,
   SupabaseUser, SUPABASE_AVAILABLE,
 } from './services/supabaseService';
 import BatchAnalyzer from './components/BatchAnalyzer';
@@ -40,6 +41,8 @@ import CalBalance from './components/cal/CalBalance';
 import CalLimitModal from './components/cal/CalLimitModal';
 import CalChargeModal from './components/cal/CalChargeModal';
 import AdRewardModal from './components/cal/AdRewardModal';
+import MealCardMenu from './components/meal/MealCardMenu';
+import MealEditModal from './components/meal/MealEditModal';
 import { calcDailyScore } from './services/scoreService';
 import { compressImage, fileToDataUrl } from './utils/imageCompress';
 import type { AnalysisStep } from './components/AnalysisProgress.types';
@@ -146,6 +149,8 @@ export default function App() {
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [showAdModal, setShowAdModal] = useState(false);
+  const [editingMeal, setEditingMeal] = useState<MealRecord | null>(null);
+  const [analyzeMode, setAnalyzeMode] = useState<'single' | 'batch'>('single');
 
   // --- Overlays ---
   const [toast, setToast] = useState<Toast | null>(null);
@@ -505,6 +510,34 @@ export default function App() {
     setHistory(prev => prev.filter(m => m.id !== id));
     if (selectedMeal?.id === id) setSelectedMeal(null);
     showToast('기록이 삭제되었습니다.');
+  };
+
+  // T-055 식사 편집: mealType + date만 (음식명/칼로리는 후속 티켓).
+  // Optimistic update → 실패 시 서버 상태 재조회로 롤백.
+  const handleEditMeal = async (
+    mealId: string,
+    patch: { mealType?: MealType; date?: string },
+  ) => {
+    setHistory(prev => prev.map(m =>
+      m.id === mealId ? { ...m, ...patch } : m,
+    ));
+    if (selectedMeal?.id === mealId) {
+      setSelectedMeal(prev => prev ? { ...prev, ...patch } : prev);
+    }
+
+    if (user) {
+      const { error } = await updateMealClassification(mealId, patch);
+      if (error) {
+        const fresh = await loadHistory(user.id);
+        setHistory(fresh);
+        showToast(`저장에 실패했어요. ${error}`, 'error');
+        return;
+      }
+    }
+
+    // 날짜 이동 시 변경된 식사가 보이는 날짜로 자동 이동 (수아 §회귀 3)
+    if (patch.date) setSelectedDateKey(localDateKey(patch.date));
+    showToast('식사 정보가 업데이트됐어요 ✨');
   };
 
   const deleteRecord = (id: string, e?: React.MouseEvent) => {
@@ -885,10 +918,18 @@ export default function App() {
                 ) : (
                   <div className="space-y-2.5">
                     {selectedDateMeals.map(meal => (
-                      <button
+                      <div
                         key={meal.id}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => { setSelectedMeal(meal); setMainTab('analyze'); }}
-                        className="w-full bg-white rounded-[22px] border border-orange-100 p-3 flex items-center gap-3 text-left shadow-sm active:scale-[0.99] transition-transform"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedMeal(meal); setMainTab('analyze');
+                          }
+                        }}
+                        className="w-full bg-white rounded-[22px] border border-orange-100 p-3 flex items-center gap-3 text-left shadow-sm active:scale-[0.99] transition-transform cursor-pointer"
                       >
                         <img src={meal.image} className="w-16 h-16 rounded-2xl object-cover bg-orange-50 shrink-0" alt="" />
                         <div className="flex-1 min-w-0">
@@ -901,8 +942,11 @@ export default function App() {
                             {meal.category && <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-500">{meal.category}</span>}
                           </div>
                         </div>
-                        <ChevronRight className="w-4 h-4 text-slate-300" />
-                      </button>
+                        <MealCardMenu
+                          onEdit={() => setEditingMeal(meal)}
+                          onDelete={() => deleteRecord(meal.id)}
+                        />
+                      </div>
                     ))}
                   </div>
                 )}
@@ -955,6 +999,16 @@ export default function App() {
 
                 ) : selectedMeal ? (
                   <motion.div key={selectedMeal.id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+                    <div className="flex justify-end mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingMeal(selectedMeal)}
+                        className="min-h-11 px-3 rounded-full bg-white border border-orange-100 text-xs font-black text-orange-600 active:scale-95 transition-transform inline-flex items-center gap-1"
+                        aria-label="식사 정보 편집"
+                      >
+                        <span aria-hidden="true">✏️</span> 편집
+                      </button>
+                    </div>
                     <AnalysisResultCard
                       meal={selectedMeal}
                       dailyCalorieTarget={dailyCalorieTarget}
@@ -1359,6 +1413,17 @@ export default function App() {
           }
         }}
         onClose={() => setShowChargeModal(false)}
+      />
+
+      <MealEditModal
+        open={!!editingMeal}
+        meal={editingMeal}
+        todayKey={todayKey}
+        onSave={async (patch) => {
+          if (!editingMeal) return;
+          await handleEditMeal(editingMeal.id, patch);
+        }}
+        onClose={() => setEditingMeal(null)}
       />
 
       <AdRewardModal
