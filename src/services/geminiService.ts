@@ -2,6 +2,32 @@
 // 이제 모든 호출은 /api/analyze, /api/analyze-batch, /api/health 프록시를 거친다.
 // 키는 서버(Vercel 함수 환경변수)에만 존재.
 import { maskText, maskArray, findMatches } from '../utils/contentFilter';
+import { getAccessToken } from './supabaseService';
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getAccessToken();
+  const base: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) base['Authorization'] = `Bearer ${token}`;
+  return base;
+}
+
+export interface QuotaSnapshot {
+  ok: boolean;
+  consumed?: 'admin' | 'free' | 'cal';
+  error?: string;
+  cal_balance?: number;
+  daily_usage_count?: number;
+  daily_usage_reset_at?: string;
+}
+
+export class InsufficientCalError extends Error {
+  quota: QuotaSnapshot;
+  constructor(quota: QuotaSnapshot) {
+    super(quota.error ?? 'insufficient_cal');
+    this.name = 'InsufficientCalError';
+    this.quota = quota;
+  }
+}
 
 export type AnalysisMode = 'quick' | 'detailed';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
@@ -230,13 +256,18 @@ export const analyzeFood = async (
   try {
     res = await fetch(`${API_BASE}/api/analyze`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await authHeaders(),
       body: JSON.stringify({ imageData, age, gender, existingMealsCount, mode, provider }),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     onEvent?.({ type: 'error', message });
     throw new Error(message);
+  }
+
+  if (res.status === 402) {
+    const body = await res.json().catch(() => ({}));
+    throw new InsufficientCalError({ ok: false, ...body });
   }
 
   if (!res.ok) {
@@ -295,11 +326,16 @@ export const analyzeFoodBatch = async (
   try {
     res = await fetch(`${API_BASE}/api/analyze-batch`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await authHeaders(),
       body: JSON.stringify({ images, age, gender, mode, provider }),
     });
   } catch (err) {
     throw new Error(err instanceof Error ? err.message : String(err));
+  }
+
+  if (res.status === 402) {
+    const body = await res.json().catch(() => ({}));
+    throw new InsufficientCalError({ ok: false, ...body });
   }
 
   if (!res.ok) throw new Error(await readErrorBody(res));

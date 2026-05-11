@@ -15,7 +15,10 @@ import ReactMarkdown from 'react-markdown';
 import {
   analyzeFood, AnalysisResult, AnalysisMode, StreamEvent, MealType,
   AIProvider, PROVIDER_LABELS, fetchHealth, ProviderHealth,
+  InsufficientCalError,
 } from './services/geminiService';
+import { fetchMe, chargeAd, initPayment, type MeResponse } from './services/calService';
+import { FREE_DAILY_LIMIT, type CalPackageId } from './config/packages';
 import {
   signIn, signUp, signOut, getSession, onAuthChange,
   saveMeal, loadHistory, deleteMeal as dbDeleteMeal, clearHistory as dbClearHistory,
@@ -32,6 +35,10 @@ import DateNavBar from './components/DateNavBar';
 import CameraFab from './components/CameraFab';
 import BottomTabBar from './components/BottomTabBar';
 import HomeSwipeArea from './components/HomeSwipeArea';
+import CalBalance from './components/cal/CalBalance';
+import CalLimitModal from './components/cal/CalLimitModal';
+import CalChargeModal from './components/cal/CalChargeModal';
+import AdRewardModal from './components/cal/AdRewardModal';
 import { calcDailyScore } from './services/scoreService';
 import { compressImage, fileToDataUrl } from './utils/imageCompress';
 import type { AnalysisStep } from './components/AnalysisProgress.types';
@@ -134,6 +141,10 @@ export default function App() {
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [showChargeModal, setShowChargeModal] = useState(false);
+  const [showAdModal, setShowAdModal] = useState(false);
 
   // --- Overlays ---
   const [toast, setToast] = useState<Toast | null>(null);
@@ -213,6 +224,12 @@ export default function App() {
     const unsub = onAuthChange(u => setUser(u));
     return unsub;
   }, []);
+
+  // 사용자 정보(me: role, cal_balance, daily_usage) 동기화
+  useEffect(() => {
+    if (!user?.id) { setMe(null); return; }
+    void fetchMe().then(m => setMe(m));
+  }, [user?.id]);
 
   // 서버에서 프로바이더 가용성 조회 (키는 서버에만 존재)
   useEffect(() => {
@@ -457,8 +474,21 @@ export default function App() {
       setSelectedMeal(results[0]);
       setSelectedDateKey(localDateKey(results[0].date));
       showToast(`${results.length}개 분석 완료!`);
+      // 차감/리셋 결과 me에 반영 (결과의 quota는 SSE done 이벤트에 포함되어 있으나
+      // 현재 분석 결과 객체에는 전파되지 않음 — me 재조회로 동기화).
+      void fetchMe().then(m => { if (m) setMe(m); });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
+      if (err instanceof InsufficientCalError) {
+        setMe(prev => prev ? {
+          ...prev,
+          cal_balance: err.quota.cal_balance ?? prev.cal_balance,
+          daily_usage_count: err.quota.daily_usage_count ?? prev.daily_usage_count,
+          daily_usage_reset_at: err.quota.daily_usage_reset_at ?? prev.daily_usage_reset_at,
+        } : prev);
+        setShowLimitModal(true);
+      } else {
+        setError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
+      }
     } finally {
       setLoading(false);
       setLoadingStep(0);
@@ -673,6 +703,15 @@ export default function App() {
           <span className="font-black text-lg tracking-tighter">Flavor<span className="text-orange-500">Guard</span> <span className="text-slate-300 text-sm">AI</span></span>
         </div>
         <div className="flex items-center gap-2">
+          {me && (
+            <CalBalance
+              dailyUsageCount={me.daily_usage_count}
+              dailyLimit={FREE_DAILY_LIMIT}
+              calBalance={me.cal_balance}
+              role={me.role}
+              onClick={() => setShowChargeModal(true)}
+            />
+          )}
           <div className="text-right">
             <p className="text-[9px] font-black text-slate-400 uppercase leading-none">오늘</p>
             <p className="text-xs font-black leading-tight">{todayCalories.toLocaleString()}<span className="opacity-40 text-[10px]">/{dailyCalorieTarget.toLocaleString()}</span></p>
@@ -1293,6 +1332,50 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+      <CalLimitModal
+        open={showLimitModal}
+        calBalance={me?.cal_balance ?? 0}
+        dailyUsageCount={me?.daily_usage_count ?? 0}
+        dailyLimit={FREE_DAILY_LIMIT}
+        adAvailable={true}
+        onWatchAd={() => { setShowLimitModal(false); setShowAdModal(true); }}
+        onCharge={() => { setShowLimitModal(false); setShowChargeModal(true); }}
+        onClose={() => setShowLimitModal(false)}
+      />
+
+      <CalChargeModal
+        open={showChargeModal}
+        onPay={async (pkgId: CalPackageId) => {
+          try {
+            const r = await initPayment(pkgId);
+            // 실 PG SDK 진입은 T-049 후속. 현재는 init 결과만 토스트.
+            showToast(`결제 시작 (order ${r.orderId.slice(0, 8)}) — PG SDK 연동 대기 중`);
+            setShowChargeModal(false);
+          } catch (e) {
+            showToast(e instanceof Error ? e.message : '결제 시작 실패', 'error');
+          }
+        }}
+        onClose={() => setShowChargeModal(false)}
+      />
+
+      <AdRewardModal
+        open={showAdModal}
+        onComplete={async () => {
+          try {
+            // 실 AdMob SDK SSV 토큰은 T-048 후속. dummy 토큰으로 보상 호출.
+            const dummySsv = `dummy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const r = await chargeAd(dummySsv);
+            setMe(prev => prev ? { ...prev, cal_balance: r.cal_balance } : prev);
+            showToast('🎉 🌰 +1 cal 도착');
+            setShowAdModal(false);
+          } catch (e) {
+            showToast(e instanceof Error ? e.message : '광고 보상 실패', 'error');
+          }
+        }}
+        onClose={() => setShowAdModal(false)}
+        isNativeSdkAvailable={false}
+      />
 
       <AnimatePresence>
         {showCalendarModal && (

@@ -86,6 +86,13 @@ export async function getSession(): Promise<SupabaseUser | null> {
   return { id: u.id, email: u.email ?? '' };
 }
 
+export async function getAccessToken(): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session?.access_token) return null;
+  return data.session.access_token;
+}
+
 export function onAuthChange(
   callback: (user: SupabaseUser | null) => void,
 ): () => void {
