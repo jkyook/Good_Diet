@@ -920,14 +920,7 @@ export default function App() {
                 </div>
               </section>
 
-              {/* 운동 추천 — T-057 (2): 초과면 강도별 3개, 정상/부족이어도 일상 활동 1~2개 */}
-              {exerciseRecs.length > 0 && (
-                <ExerciseRecommendCard excessKcal={excessKcal} exercises={exerciseRecs} />
-              )}
-              {/* 간식 추천 — 칼로리 여유 + 영양 부족 시. 운동과 동시 노출 허용 */}
-              {excessKcal <= 0 && snackRec.snacks.length > 0 && (
-                <SnackRecommendCard snacks={snackRec.snacks} missing={snackRec.missing} />
-              )}
+              {/* T-060 (2): 순서 변경 — 진행률 → 먹은 식단 → 7일 흐름 → 추천 */}
 
               <section className="space-y-3">
                 <div className="flex items-center justify-between px-1">
@@ -1006,6 +999,15 @@ export default function App() {
                   })}
                 </div>
               </section>
+
+              {/* 운동 추천 — T-057 (2): 초과면 강도별 3개, 정상/부족이어도 일상 활동 1~2개 */}
+              {exerciseRecs.length > 0 && (
+                <ExerciseRecommendCard excessKcal={excessKcal} exercises={exerciseRecs} />
+              )}
+              {/* 간식 추천 — 칼로리 여유 + 영양 부족 시. 운동과 동시 노출 허용 */}
+              {excessKcal <= 0 && snackRec.snacks.length > 0 && (
+                <SnackRecommendCard snacks={snackRec.snacks} missing={snackRec.missing} />
+              )}
               </div>
               </HomeSwipeArea>
             </motion.div>
