@@ -210,6 +210,29 @@ export async function loadHistory(userId: string): Promise<MealRecord[]> {
   return data.map(fromRow);
 }
 
+// 계정 정보 (age/gender) 업데이트 — T-061.
+// RLS UPDATE policy (users_update_own_safe)로 자기 행만 가능.
+// REVOKE는 role/cal_balance/daily_usage_* 한정이라 age/gender는 자유 update OK.
+export async function updateAccount(
+  userId: string,
+  patch: { age?: number | null; gender?: 'male' | 'female' | null },
+): Promise<{ error: string | null }> {
+  if (!supabase) return { error: 'Supabase가 설정되지 않았습니다.' };
+
+  const row: Record<string, unknown> = {};
+  if (patch.age !== undefined) row.age = patch.age;
+  if (patch.gender !== undefined) row.gender = patch.gender;
+
+  if (Object.keys(row).length === 0) return { error: null };
+
+  const { error } = await supabase
+    .from('users')
+    .update(row)
+    .eq('id', userId);
+
+  return { error: error ? error.message : null };
+}
+
 // 식사 분류 편집 — mealType / date만 (RLS + GRANT로 컬럼 화이트리스트 보호).
 // 다른 컬럼은 patch에 넣어도 무시됨.
 export async function updateMealClassification(

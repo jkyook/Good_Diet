@@ -10,6 +10,8 @@ export interface MeResponse {
   cal_balance: number;
   daily_usage_count: number;
   daily_usage_reset_at: string;
+  age: number | null;
+  gender: 'male' | 'female' | null;
 }
 
 async function authHeaders(): Promise<Record<string, string>> {

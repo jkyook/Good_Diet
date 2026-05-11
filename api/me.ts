@@ -29,7 +29,7 @@ export default async function handler(req: ApiReq, res: ApiRes) {
   const supabase = getServiceClient();
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, role, cal_balance, daily_usage_count, daily_usage_reset_at')
+    .select('id, email, role, cal_balance, daily_usage_count, daily_usage_reset_at, age, gender')
     .eq('id', auth.userId)
     .maybeSingle();
 
@@ -49,5 +49,7 @@ export default async function handler(req: ApiReq, res: ApiRes) {
     cal_balance: data.cal_balance,
     daily_usage_count: data.daily_usage_count,
     daily_usage_reset_at: data.daily_usage_reset_at,
+    age: data.age ?? null,
+    gender: data.gender ?? null,
   }));
 }
