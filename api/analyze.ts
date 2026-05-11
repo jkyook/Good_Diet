@@ -7,6 +7,16 @@ import { buildQuickPrompt, buildDetailedPrompt } from './_lib/prompt.js';
 import { checkRateLimit } from './_lib/rateLimit.js';
 import { handlePreflight } from './_lib/cors.js';
 import { validateImage } from './_lib/validate.js';
+import { verifyJwt, getServiceClient, isServiceAvailable } from './_lib/auth.js';
+
+interface QuotaResult {
+  ok: boolean;
+  consumed?: 'admin' | 'free' | 'cal';
+  error?: string;
+  cal_balance?: number;
+  daily_usage_count?: number;
+  daily_usage_reset_at?: string;
+}
 
 function send(res: ApiRes, payload: unknown) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -49,6 +59,42 @@ export default async function handler(req: ApiReq, res: ApiRes) {
     return;
   }
 
+  // cal 차감 (인증된 사용자만). 인증 미흡/서비스 미가용 시는 차감 없이 통과(개발 모드/익명 호환).
+  let quota: QuotaResult | null = null;
+  let userId: string | null = null;
+  if (isServiceAvailable()) {
+    const auth = await verifyJwt(req);
+    if (auth) {
+      userId = auth.userId;
+      const supabase = getServiceClient();
+      const consume = await supabase.rpc('consume_analysis_quota', { p_user_id: auth.userId });
+      if (consume.error) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'quota_check_failed', detail: consume.error.message }));
+        return;
+      }
+      quota = (consume.data ?? null) as QuotaResult | null;
+      if (!quota?.ok) {
+        res.statusCode = 402;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          error: quota?.error ?? 'insufficient_cal',
+          cal_balance: quota?.cal_balance ?? 0,
+          daily_usage_count: quota?.daily_usage_count ?? 0,
+          daily_usage_reset_at: quota?.daily_usage_reset_at ?? null,
+        }));
+        return;
+      }
+    }
+  }
+
+  const supabaseForRefund = (isServiceAvailable() && userId && quota?.consumed === 'cal')
+    ? getServiceClient() : null;
+  const refundUserId = userId;
+  const needsRefundOnFail = !!supabaseForRefund;
+  let succeeded = false;
+
   res.statusCode = 200;
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -67,6 +113,9 @@ export default async function handler(req: ApiReq, res: ApiRes) {
 
   if (ordered.length === 0) {
     send(res, { type: 'error', message: '사용 가능한 AI 프로바이더가 없습니다 (서버 키 누락).' });
+    if (needsRefundOnFail && supabaseForRefund && refundUserId) {
+      await supabaseForRefund.rpc('refund_analysis_quota', { p_user_id: refundUserId, p_reason: 'no_provider' });
+    }
     res.end();
     return;
   }
@@ -83,7 +132,8 @@ export default async function handler(req: ApiReq, res: ApiRes) {
       send(res, { type: 'step', index: 2, detail: `${result.calories} kcal | ${result.weightGrams}g 산출됨` });
       send(res, { type: 'step', index: 3, detail: result.portionEstimate ? `${result.portionEstimate.referenceObject} 기준 추정` : `"${result.foodName}" 분류 완료` });
       send(res, { type: 'step', index: 4, detail: `신뢰도: ${result.confidence ?? '중간'}` });
-      send(res, { type: 'done', result });
+      send(res, { type: 'done', result, quota });
+      succeeded = true;
       res.end();
       return;
     } catch (err) {
@@ -96,12 +146,18 @@ export default async function handler(req: ApiReq, res: ApiRes) {
         continue;
       }
       send(res, { type: 'error', message });
+      if (needsRefundOnFail && !succeeded && supabaseForRefund && refundUserId) {
+        await supabaseForRefund.rpc('refund_analysis_quota', { p_user_id: refundUserId, p_reason: 'analysis_failed' });
+      }
       res.end();
       return;
     }
   }
 
   send(res, { type: 'error', message: `모든 AI 서비스 실패: ${lastErrMsg}` });
+  if (needsRefundOnFail && !succeeded && supabaseForRefund && refundUserId) {
+    await supabaseForRefund.rpc('refund_analysis_quota', { p_user_id: refundUserId, p_reason: 'all_providers_failed' });
+  }
   res.end();
 }
 
