@@ -16,16 +16,16 @@ CREATE TABLE IF NOT EXISTS public.foods (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   name_normalized text NOT NULL,
-  source text NOT NULL,                    -- 'public_data' | 'mfds' | 'franchise' | 'user_input'
+  source text NOT NULL,                    -- 'public_data_food' | 'mfds_processed' | 'franchise' | 'user_curated'
   source_id text,                          -- 원본 데이터 ID
   category text,
   serving_grams int4,
-  calories numeric(6,2),                   -- per serving
-  protein numeric(6,2),
-  carbs numeric(6,2),
-  fat numeric(6,2),
-  fiber numeric(6,2),
-  sodium numeric(6,2),                     -- mg
+  calories numeric,                        -- per serving (T-069c-postdeploy: numeric(6,2) → numeric, 가공식품 큰 값 수용)
+  protein numeric,
+  carbs numeric,
+  fat numeric,
+  fiber numeric,
+  sodium numeric,                          -- mg
   brand text,                              -- 시판 상품/프랜차이즈
   barcode text,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -33,10 +33,25 @@ CREATE TABLE IF NOT EXISTS public.foods (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- T-069c-postdeploy: 기존 production DB에서 ALTER COLUMN TYPE 수동 적용된 부분을 schema에도 반영.
+-- 신규 환경은 위 CREATE TABLE에서 이미 numeric으로 생성되므로 아래 ALTER는 noop. 기존 DB(numeric(6,2))는 numeric으로 확장.
+ALTER TABLE public.foods ALTER COLUMN calories TYPE numeric;
+ALTER TABLE public.foods ALTER COLUMN protein  TYPE numeric;
+ALTER TABLE public.foods ALTER COLUMN carbs    TYPE numeric;
+ALTER TABLE public.foods ALTER COLUMN fat      TYPE numeric;
+ALTER TABLE public.foods ALTER COLUMN fiber    TYPE numeric;
+ALTER TABLE public.foods ALTER COLUMN sodium   TYPE numeric;
+
 -- source + source_id 중복 방지 (upsert onConflict 키)
+-- 두 가지 unique index 공존 (idempotent — 둘 다 IF NOT EXISTS):
+--  (a) partial unique — source_id IS NOT NULL 행만 (NULL source_id 다중 허용)
+--  (b) full unique    — production에서 추가됨 (T-069c-postdeploy). NULL은 PostgreSQL이 unique로 취급 X라 안전
 CREATE UNIQUE INDEX IF NOT EXISTS idx_foods_source_source_id
   ON public.foods (source, source_id)
   WHERE source_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_foods_source_source_id_uniq
+  ON public.foods (source, source_id);
 
 CREATE TABLE IF NOT EXISTS public.food_aliases (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
