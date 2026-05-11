@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { AlertTriangle, ChevronDown, ChevronUp, Lightbulb, Star } from 'lucide-react';
 import { AnalysisResult, MealType } from '../services/geminiService';
+import { reportMatchCorrection } from '../services/supabaseService';
+import MatchCorrectionModal, { type CorrectionReason } from './meal/MatchCorrectionModal';
 
 // 일일 권장량 기준 (수아 T-010 설계)
 const DAILY_REF = { protein: 55, carbs: 324, fat: 54, sodium: 2000 };
@@ -55,6 +57,8 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
   const [weightOverride, setWeightOverride] = useState<number>(meal.weightGrams);
   const [showIngredients, setShowIngredients] = useState(true);
   const [showNutrition, setShowNutrition] = useState(true);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportToast, setReportToast] = useState<string | null>(null);
 
   const confidence = meal.confidence ?? meal.portionEstimate?.confidence ?? '중간';
   const totals = meal.totals ?? {
@@ -116,7 +120,8 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
                 🍽 1인분 기준 (원본 {meal.portionCount === 4 ? '4+' : meal.portionCount}인분)
               </span>
             )}
-            {/* T-072: 분석 직후엔 dbMatch (이름/brand 포함), 영속 복원은 matchedFoodId(+ similarity)만. 둘 중 하나라도 있으면 배지 노출. */}
+            {/* T-072: 분석 직후엔 dbMatch (이름/brand 포함), 영속 복원은 matchedFoodId(+ similarity)만.
+                T-073: 배지를 button으로 — 클릭 시 정정 신고 모달. title hover는 데스크탑에서만 유효 → 클릭 진입점 명시. */}
             {(meal.dbMatch || meal.matchedFoodId) && (() => {
               const sim = meal.dbMatch?.similarity ?? meal.matchSimilarity ?? null;
               const name = meal.dbMatch?.name;
@@ -125,16 +130,17 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
               if (name) titleParts.push(`'${name}' 와 일치`);
               if (sim !== null) titleParts.push(`${Math.round(sim * 100)}%`);
               if (brand) titleParts.push(brand);
-              const title = titleParts.length > 0
-                ? titleParts.join(' · ')
-                : 'DB 식품과 매칭됨';
+              titleParts.push('탭하여 정정 신고');
               return (
-                <span
-                  className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-black"
-                  title={title}
+                <button
+                  type="button"
+                  onClick={() => setReportOpen(true)}
+                  className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-black active:scale-95 transition-transform"
+                  title={titleParts.join(' · ')}
+                  aria-label={`DB 매칭 ${name ?? ''}, 탭하여 정정 신고`}
                 >
                   📚 DB 매칭
-                </span>
+                </button>
               );
             })()}
             {meal.detectedFoods?.map(f => (
@@ -346,6 +352,41 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
       >
         ← 뒤로가기
       </button>
+
+      {/* T-073: 정정 신고 inline 토스트 (모달 닫힘 후 잠시 표시) */}
+      {reportToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[180] px-4 py-2.5 rounded-full bg-emerald-500 text-white text-xs font-black shadow-lg"
+        >
+          {reportToast}
+        </div>
+      )}
+
+      {/* T-073: 정정 신고 모달 */}
+      <MatchCorrectionModal
+        open={reportOpen}
+        aiResultFoodName={meal.foodName}
+        matchedFoodName={meal.dbMatch?.name ?? null}
+        matchSimilarity={meal.dbMatch?.similarity ?? meal.matchSimilarity ?? null}
+        matchedFoodId={meal.dbMatch?.food_id ?? meal.matchedFoodId ?? null}
+        mealHistoryId={meal.id}
+        onSubmit={async ({ user_correction, reason }: { user_correction: string; reason: CorrectionReason }) => {
+          const { error } = await reportMatchCorrection({
+            meal_history_id: meal.id,
+            ai_result_food_name: meal.foodName,
+            matched_food_id: meal.dbMatch?.food_id ?? meal.matchedFoodId ?? null,
+            user_correction,
+            reason,
+          });
+          if (error) throw new Error(error);
+          setReportToast('🙏 정정 신고 감사합니다. 검토 후 반영됩니다');
+          window.setTimeout(() => setReportToast(null), 3000);
+          return true;
+        }}
+        onClose={() => setReportOpen(false)}
+      />
     </div>
   );
 }

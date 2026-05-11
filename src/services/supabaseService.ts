@@ -216,6 +216,37 @@ export async function loadHistory(userId: string): Promise<MealRecord[]> {
   return data.map(fromRow);
 }
 
+// T-073 DB 매칭 정정 신고 — food_match_corrections INSERT.
+// RLS INSERT WITH CHECK (user_id = auth.uid()) — anon 클라가 JWT 가진 상태에서 호출. 비로그인은 거부.
+export async function reportMatchCorrection(input: {
+  meal_history_id?: string | null;
+  ai_result_food_name: string;
+  matched_food_id?: string | null;
+  user_correction: string;
+  reason?: string | null;
+}): Promise<{ error: string | null }> {
+  if (!supabase) return { error: 'Supabase가 설정되지 않았습니다.' };
+
+  // 현재 세션의 user.id를 직접 채워 RLS WITH CHECK 통과 보장.
+  const { data: session } = await supabase.auth.getSession();
+  const userId = session?.session?.user?.id;
+  if (!userId) return { error: '로그인이 필요합니다.' };
+
+  const { error } = await supabase.from('food_match_corrections').insert({
+    user_id: userId,
+    meal_history_id: input.meal_history_id ?? null,
+    ai_result_food_name: input.ai_result_food_name,
+    matched_food_id: input.matched_food_id ?? null,
+    user_correction: input.user_correction,
+    // reason은 metadata에 보관 (스키마 단순화 — 컬럼 없이 jsonb 미사용)
+    // 단 본 스키마는 reason 컬럼 없음 → user_correction에 prefix로 포함 (단순화)
+    ...(input.reason ? { user_correction: `[${input.reason}] ${input.user_correction}` } : {}),
+    status: 'pending',
+  });
+
+  return { error: error ? error.message : null };
+}
+
 // 계정 정보 (age/gender) 업데이트 — T-061.
 // RLS UPDATE policy (users_update_own_safe)로 자기 행만 가능.
 // REVOKE는 role/cal_balance/daily_usage_* 한정이라 age/gender는 자유 update OK.
