@@ -4,8 +4,46 @@
 -- 실행: Supabase Dashboard → SQL Editor → 본 파일 통째로 붙여넣고 Run
 -- ============================================================
 
--- 1. users 컬럼 추가 (cal_balance 기본 5, role 'user', 일일 카운터)
-ALTER TABLE users
+-- ============================================================
+-- 0. public.users 테이블 생성 + auth.users 자동 미러 트리거 (M4 보완 2026-05-11)
+--    fatguard는 기존에 public.users 부재. cal 시스템은 이 테이블에 컬럼 추가.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.users (
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 신규 가입 자동 INSERT (auth.users → public.users 미러)
+CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  INSERT INTO public.users (id, email)
+  VALUES (NEW.id, NEW.email)
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();
+
+-- 기존 auth.users 백필 (이미 가입된 사용자들도 public.users에 미러)
+INSERT INTO public.users (id, email)
+SELECT id, email FROM auth.users
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
+-- 1. public.users 컬럼 추가 (cal_balance 기본 5, role 'user', 일일 카운터)
+-- ============================================================
+ALTER TABLE public.users
   ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user'
     CHECK (role IN ('admin', 'user')),
   ADD COLUMN IF NOT EXISTS cal_balance int4 NOT NULL DEFAULT 5,
@@ -15,13 +53,13 @@ ALTER TABLE users
              AT TIME ZONE 'Asia/Seoul' + interval '1 day');
 
 -- 2. 운영자(jkyook) 승격
-UPDATE users SET role = 'admin'
+UPDATE public.users SET role = 'admin'
   WHERE email = 'jinkwan.yook@gmail.com';
 
 -- 3. cal_transactions 테이블 (이력)
 CREATE TABLE IF NOT EXISTS cal_transactions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   type text NOT NULL CHECK (type IN (
     'init',            -- 초기 5개 지급
     'analyze_charge',  -- 분석 차감 (-1)
@@ -42,7 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_cal_transactions_user_created
 -- 4. payment_orders 테이블
 CREATE TABLE IF NOT EXISTS payment_orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   package_cal int4 NOT NULL,
   package_krw int4 NOT NULL,
   pg_provider text NOT NULL,
@@ -63,7 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_payment_orders_pg_order_id
 -- 5. ad_views 테이블 (SSV 토큰 UNIQUE로 중복 보상 차단)
 CREATE TABLE IF NOT EXISTS ad_views (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   ad_provider text NOT NULL,
   ad_unit_id text NOT NULL,
   reward_cal int4 NOT NULL DEFAULT 1,
@@ -86,7 +124,7 @@ CREATE POLICY "cal_transactions_select_own_or_admin"
   ON cal_transactions FOR SELECT
   USING (
     user_id = auth.uid()
-    OR EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+    OR EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin')
   );
 
 ALTER TABLE payment_orders ENABLE ROW LEVEL SECURITY;
@@ -95,7 +133,7 @@ CREATE POLICY "payment_orders_select_own_or_admin"
   ON payment_orders FOR SELECT
   USING (
     user_id = auth.uid()
-    OR EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+    OR EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin')
   );
 
 ALTER TABLE ad_views ENABLE ROW LEVEL SECURITY;
@@ -104,26 +142,26 @@ CREATE POLICY "ad_views_select_own_or_admin"
   ON ad_views FOR SELECT
   USING (
     user_id = auth.uid()
-    OR EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+    OR EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin')
   );
 
--- users: 기존 select policy 보존 + admin 우회 추가
-DROP POLICY IF EXISTS "users_select_own" ON users;
-DROP POLICY IF EXISTS "users_select_own_or_admin" ON users;
-CREATE POLICY "users_select_own_or_admin" ON users FOR SELECT
+-- public.users: 기존 select policy 보존 + admin 우회 추가
+DROP POLICY IF EXISTS "users_select_own" ON public.users;
+DROP POLICY IF EXISTS "users_select_own_or_admin" ON public.users;
+CREATE POLICY "users_select_own_or_admin" ON public.users FOR SELECT
   USING (
     id = auth.uid()
-    OR EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+    OR EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin')
   );
 
 -- B1 보완: 보호 컬럼은 UPDATE 권한 자체에서 REVOKE
 REVOKE UPDATE (role, cal_balance, daily_usage_count, daily_usage_reset_at)
-  ON users FROM authenticated, anon;
+  ON public.users FROM authenticated, anon;
 
--- users UPDATE 정책: 자기 행만 (다른 컬럼만 가능)
-DROP POLICY IF EXISTS "users_update_own" ON users;
-DROP POLICY IF EXISTS "users_update_own_safe" ON users;
-CREATE POLICY "users_update_own_safe" ON users FOR UPDATE
+-- public.users UPDATE 정책: 자기 행만 (다른 컬럼만 가능)
+DROP POLICY IF EXISTS "users_update_own" ON public.users;
+DROP POLICY IF EXISTS "users_update_own_safe" ON public.users;
+CREATE POLICY "users_update_own_safe" ON public.users FOR UPDATE
   USING (id = auth.uid())
   WITH CHECK (id = auth.uid());
 
@@ -146,7 +184,7 @@ DECLARE
 BEGIN
   SELECT id, role, cal_balance, daily_usage_count, daily_usage_reset_at
     INTO v_user
-    FROM users
+    FROM public.users
     WHERE id = p_user_id
     FOR UPDATE;
 
@@ -169,7 +207,7 @@ BEGIN
   IF v_now >= v_user.daily_usage_reset_at THEN
     v_next_reset := (date_trunc('day', (v_now AT TIME ZONE 'Asia/Seoul'))
                      AT TIME ZONE 'Asia/Seoul') + interval '1 day';
-    UPDATE users
+    UPDATE public.users
       SET daily_usage_count = 0, daily_usage_reset_at = v_next_reset
       WHERE id = p_user_id;
     v_user.daily_usage_count := 0;
@@ -178,7 +216,7 @@ BEGIN
 
   -- 무료 한도 (3회) 내
   IF v_user.daily_usage_count < 3 THEN
-    UPDATE users SET daily_usage_count = daily_usage_count + 1 WHERE id = p_user_id;
+    UPDATE public.users SET daily_usage_count = daily_usage_count + 1 WHERE id = p_user_id;
     RETURN jsonb_build_object(
       'ok', true,
       'consumed', 'free',
@@ -199,7 +237,7 @@ BEGIN
     );
   END IF;
 
-  UPDATE users SET cal_balance = cal_balance - 1 WHERE id = p_user_id;
+  UPDATE public.users SET cal_balance = cal_balance - 1 WHERE id = p_user_id;
   INSERT INTO cal_transactions (user_id, type, amount, balance_after, metadata)
     VALUES (p_user_id, 'analyze_charge', -1, v_user.cal_balance - 1, '{}'::jsonb);
 
@@ -223,7 +261,7 @@ AS $$
 DECLARE
   v_after int4;
 BEGIN
-  UPDATE users
+  UPDATE public.users
     SET cal_balance = cal_balance + 1
     WHERE id = p_user_id
     RETURNING cal_balance INTO v_after;
@@ -253,7 +291,7 @@ BEGIN
     RAISE EXCEPTION 'grant_cal_reward: invalid type %', p_type;
   END IF;
 
-  UPDATE users
+  UPDATE public.users
     SET cal_balance = cal_balance + p_amount
     WHERE id = p_user_id
     RETURNING cal_balance INTO v_after;

@@ -9,3 +9,8 @@ coverage/
 !.env.production
 !.env.mobile
 .vercel
+
+# Migration backup files (sed/perl)
+migrations/*.bak
+migrations/*.bak[0-9]
+migrations/*.bak.*
