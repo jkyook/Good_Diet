@@ -4,16 +4,23 @@ import { motion, AnimatePresence } from 'motion/react';
 interface CalLimitModalProps {
   open: boolean;
   calBalance: number;
-  dailyUsageCount: number;
-  dailyLimit: number;
+  /** 다음 자동 충전 시각 — me.daily_usage_reset_at ISO 문자열 */
+  nextRechargeAt?: string | null;
   adAvailable?: boolean;
   onWatchAd: () => void;
   onCharge: () => void;
   onClose: () => void;
 }
 
+function formatKst(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 export default function CalLimitModal({
-  open, calBalance, dailyUsageCount, dailyLimit, adAvailable = true,
+  open, calBalance, nextRechargeAt, adAvailable = true,
   onWatchAd, onCharge, onClose,
 }: CalLimitModalProps) {
   return (
@@ -40,10 +47,14 @@ export default function CalLimitModal({
               🌰 cal이 부족해요
             </h2>
             <p className="mt-2 text-sm font-bold text-slate-600 leading-relaxed">
-              오늘 무료 분석 {dailyLimit}회를 다 사용했어요. 추가 분석에는 cal이 필요해요.
+              분석에는 cal 1개가 필요해요. 광고를 보거나 충전해 주세요.
             </p>
-            <div className="mt-3 text-xs font-bold text-slate-500">
-              현재 잔액: 🌰 {calBalance} cal · 오늘 사용 {dailyUsageCount}/{dailyLimit}
+            <div className="mt-3 text-xs font-bold text-slate-500 space-y-1">
+              <div>현재 잔액: 🌰 {calBalance} cal</div>
+              <div>
+                다음 자동 충전: <span className="text-slate-700">{formatKst(nextRechargeAt) ?? '매일 자정 KST'}</span>
+                {' · '}잔액 &lt; 3이면 3으로 보충
+              </div>
             </div>
 
             <div className="mt-5 space-y-2">

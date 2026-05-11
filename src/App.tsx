@@ -19,7 +19,7 @@ import {
 } from './services/geminiService';
 import { fetchMe, chargeAd, initPayment, type MeResponse } from './services/calService';
 import { updateAccount } from './services/supabaseService';
-import { FREE_DAILY_LIMIT, type CalPackageId } from './config/packages';
+import { type CalPackageId } from './config/packages';
 import { inferMealTypeByTime } from './utils/mealTime';
 import {
   signIn, signUp, signOut, getSession, onAuthChange,
@@ -765,8 +765,6 @@ export default function App() {
         <div className="flex items-center gap-1.5 min-w-0">
           {me && (
             <CalBalance
-              dailyUsageCount={me.daily_usage_count}
-              dailyLimit={FREE_DAILY_LIMIT}
               calBalance={me.cal_balance}
               role={me.role}
               onClick={() => setShowChargeModal(true)}
@@ -1454,8 +1452,7 @@ export default function App() {
       <CalLimitModal
         open={showLimitModal}
         calBalance={me?.cal_balance ?? 0}
-        dailyUsageCount={me?.daily_usage_count ?? 0}
-        dailyLimit={FREE_DAILY_LIMIT}
+        nextRechargeAt={me?.daily_usage_reset_at ?? null}
         adAvailable={true}
         onWatchAd={() => { setShowLimitModal(false); setShowAdModal(true); }}
         onCharge={() => { setShowLimitModal(false); setShowChargeModal(true); }}
@@ -1465,8 +1462,7 @@ export default function App() {
       <CalChargeModal
         open={showChargeModal}
         calBalance={me?.cal_balance}
-        dailyUsageCount={me?.daily_usage_count}
-        dailyLimit={FREE_DAILY_LIMIT}
+        nextRechargeAt={me?.daily_usage_reset_at ?? null}
         onPay={async (pkgId: CalPackageId) => {
           try {
             const r = await initPayment(pkgId);

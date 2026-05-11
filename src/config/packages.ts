@@ -15,7 +15,8 @@ export function findPackage(id: string): CalPackage | undefined {
   return CAL_PACKAGES.find(p => p.id === id);
 }
 
-// 무료 일일 한도 — 일반 사용자 기준
+// @deprecated T-061 RPC에서 free 한도 분기 폐기 — 모든 분석 = 1 cal.
+//   자정 KST 자동 충전(min 3 cal floor)으로 정책 대체. 호환성 위해 상수 자체는 유지.
 export const FREE_DAILY_LIMIT = 3;
 
 // 광고 1회 보상 cal 수량

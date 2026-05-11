@@ -1,16 +1,12 @@
 import React from 'react';
 
 interface CalBalanceProps {
-  dailyUsageCount: number;
-  dailyLimit: number;
   calBalance: number;
   role: 'user' | 'admin';
   onClick: () => void;
 }
 
-export default function CalBalance({
-  dailyUsageCount, dailyLimit, calBalance, role, onClick,
-}: CalBalanceProps) {
+export default function CalBalance({ calBalance, role, onClick }: CalBalanceProps) {
   if (role === 'admin') {
     return (
       <button
@@ -24,19 +20,17 @@ export default function CalBalance({
     );
   }
 
-  const limitReached = dailyUsageCount >= dailyLimit && calBalance < 1;
-  const lowBalance = !limitReached && calBalance <= 1 && dailyUsageCount >= dailyLimit;
+  // T-062: free 한도 분기 폐기 (T-061 RPC) — cal_balance만으로 시각 분기.
+  const exhausted = calBalance < 1;
+  const low = !exhausted && calBalance <= 1;
 
-  // T-060 (3): admin "🛡️ 무제한"과 비슷한 단순 아이콘 칩으로 통일.
-  // 사용량(N/3)은 모달 안에서 확인 — chip은 잔액만 표시.
-  const bg = limitReached
+  const bg = exhausted
     ? 'bg-orange-500 text-white'
-    : lowBalance
+    : low
     ? 'bg-orange-50 text-orange-600 ring-1 ring-orange-200'
     : 'bg-orange-50 text-orange-700 ring-1 ring-orange-100';
 
-  const remaining = Math.max(0, dailyLimit - dailyUsageCount);
-  const ariaLabel = `cal ${calBalance} 보유. 오늘 무료 분석 ${remaining}회 남음. 탭하여 잔액 보기`;
+  const ariaLabel = `cal ${calBalance} 보유. 탭하여 잔액 보기`;
 
   return (
     <button
