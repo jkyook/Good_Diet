@@ -44,6 +44,8 @@ interface FranchiseItem {
   fiber?: number;
   sodium?: number;
   url?: string;
+  /** crawler가 metadata로 보존할 임의 필드 (allergen 등) */
+  extra?: Record<string, unknown>;
 }
 
 interface FoodRow {
@@ -85,9 +87,10 @@ function toRow(item: FranchiseItem): FoodRow | null {
     sodium:   item.sodium ?? null,
     brand: item.brand,
     metadata: {
-      origin: 'franchise_manual',
+      origin: 'franchise',
       imported_at: new Date().toISOString(),
       ...(item.url ? { url: item.url } : {}),
+      ...(item.extra ? item.extra : {}),
     },
   };
 }

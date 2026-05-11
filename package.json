@@ -14,7 +14,8 @@
     "lint": "tsc --noEmit",
     "test:filter": "tsx scripts/test-content-filter.ts",
     "import:foods": "tsx scripts/import_foods.ts",
-    "import:franchise": "tsx scripts/import_franchise.ts"
+    "import:franchise": "tsx scripts/import_franchise.ts",
+    "crawl:franchise": "tsx scripts/crawl_franchise.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
@@ -43,6 +44,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
+    "cheerio": "^1.0.0",
     "csv-parse": "^5.6.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
