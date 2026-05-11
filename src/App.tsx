@@ -792,10 +792,14 @@ export default function App() {
             )
           )}
           <div ref={profileRef} className="relative">
-            <button onClick={() => setShowProfile(p => !p)}
+            {/* T-063 (1): 'M30' 텍스트 시각 제거 (계정 정보는 AccountModal로 중복). 칼로리 목표 입력 popover는 보존. */}
+            <button
+              type="button"
+              onClick={() => setShowProfile(p => !p)}
+              aria-label="칼로리 목표 설정 열기"
               className="w-9 h-9 bg-white border-[3px] border-slate-900 rounded-xl flex items-center justify-center text-slate-900 shadow-[3px_3px_0_0_rgba(15,23,42,1)] hover:bg-orange-50 transition-colors"
             >
-              <span className="text-xs font-black">{gender === 'male' ? 'M' : 'F'}{age}</span>
+              <User className="w-4 h-4" aria-hidden="true" />
             </button>
             <AnimatePresence>
               {showProfile && (
@@ -1499,14 +1503,20 @@ export default function App() {
         open={showAccountModal}
         me={me}
         onSave={async (patch) => {
-          if (!user) return;
+          if (!user) return false;
           const { error } = await updateAccount(user.id, patch);
-          if (error) { showToast(`저장 실패: ${error}`, 'error'); return; }
+          if (error) {
+            console.error('[updateAccount] failed:', error);
+            showToast(`저장 실패: ${error}`, 'error');
+            // 에러 메시지를 모달 inline에서도 보이도록 throw (모달 내부 catch에서 가시화)
+            throw new Error(error);
+          }
           // me 갱신 + 로컬 칼로리 목표 계산용 age/gender state도 동기화
           setMe(prev => prev ? { ...prev, age: patch.age ?? prev.age, gender: patch.gender ?? prev.gender } : prev);
           if (patch.age !== undefined && patch.age !== null) setAge(patch.age);
           if (patch.gender !== undefined && patch.gender !== null) setGender(patch.gender);
           showToast('계정 정보가 업데이트됐어요 ✨');
+          return true;
         }}
         onLogout={() => { void handleLogout(); }}
         onClose={() => setShowAccountModal(false)}

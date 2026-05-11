@@ -6,7 +6,8 @@ import type { MeResponse } from '../../services/calService';
 interface AccountModalProps {
   open: boolean;
   me: MeResponse | null;
-  onSave: (patch: { age?: number | null; gender?: 'male' | 'female' | null }) => Promise<void> | void;
+  /** 성공 시 true, 실패 시 false 반환 (모달 닫기 분기용). */
+  onSave: (patch: { age?: number | null; gender?: 'male' | 'female' | null }) => Promise<boolean> | boolean;
   onLogout: () => void;
   onClose: () => void;
 }
@@ -22,11 +23,13 @@ export default function AccountModal({ open, me, onSave, onLogout, onClose }: Ac
   const [age, setAge] = useState<string>('');
   const [gender, setGender] = useState<'male' | 'female' | ''>('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && me) {
       setAge(me.age !== null ? String(me.age) : '');
       setGender(me.gender ?? '');
+      setError(null);
     }
   }, [open, me]);
 
@@ -48,9 +51,13 @@ export default function AccountModal({ open, me, onSave, onLogout, onClose }: Ac
   const handleSave = async () => {
     if (!ageValid || submitting || !changed) return;
     setSubmitting(true);
+    setError(null);
     try {
-      await onSave({ age: ageNum, gender: genderNext });
-      onClose();
+      const ok = await onSave({ age: ageNum, gender: genderNext });
+      if (ok) onClose();
+      else setError('저장에 실패했어요. 잠시 후 다시 시도해주세요.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '저장 중 오류가 발생했어요.');
     } finally {
       setSubmitting(false);
     }
@@ -77,23 +84,26 @@ export default function AccountModal({ open, me, onSave, onLogout, onClose }: Ac
             initial={{ y: 40, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 40, opacity: 0 }}
-            className="bg-white w-full sm:max-w-md sm:mx-4 rounded-t-3xl sm:rounded-3xl max-h-[92vh] overflow-y-auto"
+            className="bg-white w-full sm:max-w-md sm:mx-4 rounded-t-3xl sm:rounded-3xl flex flex-col max-h-[88vh] sm:max-h-[80vh]"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-6 space-y-5">
-              <div className="flex items-center justify-between">
-                <h2 id="accountModalTitle" className="text-base font-black text-slate-900">계정</h2>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label="닫기"
-                  className="text-xs font-black text-slate-400 px-2 py-1 rounded-full bg-slate-50"
-                >
-                  닫기
-                </button>
-              </div>
+            {/* sticky header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+              <h2 id="accountModalTitle" className="text-base font-black text-slate-900">계정</h2>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="닫기"
+                className="min-h-11 min-w-11 text-xs font-black text-slate-400 px-2 py-1 rounded-full bg-slate-50"
+              >
+                닫기
+              </button>
+            </div>
 
-              {/* 이메일 + role + cal 잔고 */}
+            {/* scrollable body */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              {/* 이메일 + role + cal */}
               <div className="bg-orange-50 rounded-2xl px-4 py-3 space-y-2">
                 <div>
                   <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest">이메일</p>
@@ -107,7 +117,7 @@ export default function AccountModal({ open, me, onSave, onLogout, onClose }: Ac
                 </div>
                 {me.role !== 'admin' && (
                   <p className="text-[11px] font-bold text-slate-500">
-                    다음 자동 충전: <span className="text-slate-700">{formatKstResetAt(me.daily_usage_reset_at)}</span> · 잔액이 3 미만이면 3으로 보충
+                    다음 자동 충전: <span className="text-slate-700">{formatKstResetAt(me.daily_usage_reset_at)}</span> · 잔액 &lt; 3이면 3으로 보충
                   </p>
                 )}
               </div>
@@ -157,7 +167,20 @@ export default function AccountModal({ open, me, onSave, onLogout, onClose }: Ac
                 </div>
               </div>
 
-              {/* 저장 */}
+              {/* inline error */}
+              {error && (
+                <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2.5" role="alert" aria-live="assertive">
+                  <p className="text-xs font-black text-rose-700">저장 실패</p>
+                  <p className="mt-0.5 text-[11px] font-bold text-rose-600 break-words">{error}</p>
+                  <p className="mt-1 text-[10px] font-bold text-rose-500">
+                    'column ... does not exist' 메시지가 보이면 마이그레이션 SQL(T-061)이 실행되지 않은 환경입니다.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* sticky footer */}
+            <div className="px-6 py-3 border-t border-slate-100 space-y-2 shrink-0 bg-white">
               <button
                 type="button"
                 onClick={handleSave}
@@ -166,12 +189,10 @@ export default function AccountModal({ open, me, onSave, onLogout, onClose }: Ac
               >
                 {submitting ? '저장 중…' : changed ? '저장' : '변경 없음'}
               </button>
-
-              {/* 로그아웃 */}
               <button
                 type="button"
                 onClick={() => { onLogout(); onClose(); }}
-                className="w-full py-3 rounded-2xl bg-white border-2 border-slate-200 text-slate-600 text-sm font-black active:scale-[0.98] transition-transform inline-flex items-center justify-center gap-2"
+                className="w-full py-2.5 rounded-2xl bg-white border-2 border-slate-200 text-slate-600 text-xs font-black active:scale-[0.98] transition-transform inline-flex items-center justify-center gap-2"
               >
                 <LogOut className="w-4 h-4" aria-hidden="true" />
                 로그아웃
