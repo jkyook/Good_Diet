@@ -132,7 +132,59 @@ export default async function handler(req: ApiReq, res: ApiRes) {
       send(res, { type: 'step', index: 2, detail: `${result.calories} kcal | ${result.weightGrams}g 산출됨` });
       send(res, { type: 'step', index: 3, detail: result.portionEstimate ? `${result.portionEstimate.referenceObject} 기준 추정` : `"${result.foodName}" 분류 완료` });
       send(res, { type: 'step', index: 4, detail: `신뢰도: ${result.confidence ?? '중간'}` });
-      send(res, { type: 'done', result, quota });
+
+      // T-069 Phase 2: DB 식품 매칭. similarity > 0.7 시 영양정보 보정. 실패해도 AI 결과는 그대로.
+      let dbMatch: {
+        food_id: string;
+        name: string;
+        category: string | null;
+        brand: string | null;
+        similarity: number;
+        matched_via: 'name' | 'alias';
+      } | undefined;
+      let finalResult = result;
+      if (isServiceAvailable()) {
+        try {
+          const supabase = getServiceClient();
+          const { data: matches } = await supabase.rpc('match_food_with_aliases', {
+            p_query: result.foodName,
+            p_limit: 1,
+            p_min_similarity: 0.5,
+          });
+          const top = Array.isArray(matches) && matches.length > 0
+            ? matches[0] as {
+                food_id: string; name: string; category: string | null;
+                calories: number | null; protein: number | null; carbs: number | null; fat: number | null;
+                serving_grams: number | null; brand: string | null;
+                matched_via: 'name' | 'alias'; similarity: number;
+              }
+            : null;
+          if (top && top.similarity > 0.7) {
+            dbMatch = {
+              food_id: top.food_id,
+              name: top.name,
+              category: top.category,
+              brand: top.brand,
+              similarity: top.similarity,
+              matched_via: top.matched_via,
+            };
+            // DB 영양정보 우선 (null 필드는 AI 값 보존)
+            finalResult = {
+              ...result,
+              calories: top.calories ?? result.calories,
+              protein:  top.protein  ?? result.protein,
+              carbs:    top.carbs    ?? result.carbs,
+              fat:      top.fat      ?? result.fat,
+              weightGrams: top.serving_grams ?? result.weightGrams,
+            };
+          }
+        } catch (e) {
+          // RPC 실패는 silent — AI 결과 그대로 진행
+          console.warn('[analyze] DB match skipped:', e instanceof Error ? e.message : String(e));
+        }
+      }
+
+      send(res, { type: 'done', result: finalResult, quota, dbMatch });
       succeeded = true;
       res.end();
       return;

@@ -290,6 +290,15 @@ export default function AccountModal({
                   </p>
                 </div>
               )}
+
+              {/* T-069 Q4: 데이터 출처 표시 */}
+              <section className="pt-2 border-t border-slate-100">
+                <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+                  데이터 출처: 공공데이터포털 · 식약처 식품영양정보 · 외식 프랜차이즈 공식 영양표
+                  <br />
+                  <span className="text-slate-300">AI 분석은 참고용. 의료 판단 X.</span>
+                </p>
+              </section>
             </div>
 
             {/* sticky footer */}

@@ -119,6 +119,15 @@ export interface AnalysisResult {
   warnings?: string[];
   confidence?: '높음' | '중간' | '낮음';
   recommendations?: Recommendations;
+  /** T-069: DB 식품 매칭 결과 (similarity > 0.7 시에만 포함). 영양정보는 이미 result.* 에 반영됨. */
+  dbMatch?: {
+    food_id: string;
+    name: string;
+    category: string | null;
+    brand: string | null;
+    similarity: number;
+    matched_via: 'name' | 'alias';
+  };
 }
 
 export interface StepEvent {
@@ -129,7 +138,7 @@ export interface StepEvent {
 
 export type StreamEvent =
   | StepEvent
-  | { type: 'done'; result: AnalysisResult }
+  | { type: 'done'; result: AnalysisResult; dbMatch?: AnalysisResult['dbMatch'] }
   | { type: 'error'; message: string }
   | { type: 'provider-fallback'; from: AIProvider; reason: 'parse' | 'quota' };
 
@@ -283,7 +292,11 @@ export const analyzeFood = async (
     const ev = e as StreamEvent;
     if (ev.type === 'step') onEvent?.(ev);
     else if (ev.type === 'provider-fallback') onEvent?.(ev);
-    else if (ev.type === 'done') { result = ev.result; onEvent?.(ev); }
+    else if (ev.type === 'done') {
+      // T-069: 서버가 done.dbMatch를 보내면 result에 첨부 (한 객체로 관리).
+      result = ev.dbMatch ? { ...ev.result, dbMatch: ev.dbMatch } : ev.result;
+      onEvent?.(ev);
+    }
     else if (ev.type === 'error') { errMsg = ev.message; onEvent?.(ev); }
   });
 
