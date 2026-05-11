@@ -700,7 +700,7 @@ export default function App() {
           <div className="w-7 h-7 bg-orange-500 rounded-lg flex items-center justify-center shadow-md -rotate-12">
             <Utensils className="text-white w-4 h-4" />
           </div>
-          <span className="font-black text-lg tracking-tighter">Flavor<span className="text-orange-500">Guard</span> <span className="text-slate-300 text-sm">AI</span></span>
+          <span className="font-black text-lg tracking-tighter">fat<span className="text-orange-500">guard</span> <span className="text-slate-300 text-sm">🛡️</span></span>
         </div>
         <div className="flex items-center gap-2">
           {me && (
