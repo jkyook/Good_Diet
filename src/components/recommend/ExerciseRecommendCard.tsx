@@ -7,6 +7,7 @@ interface ExerciseRecommendCardProps {
 }
 
 function headline(excess: number): string {
+  if (excess <= 0)   return '오늘의 활동 추천 — 가볍게 산책 어떠세요?';
   if (excess >= 300) return '오늘은 충분히 즐기셨네요! 가벼운 운동 한 번 어떠세요?';
   return '오늘은 좀 든든하셨네요! 산책 어떠세요?';
 }
@@ -20,7 +21,9 @@ export default function ExerciseRecommendCard({ excessKcal, exercises }: Exercis
       className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 space-y-3"
     >
       <div>
-        <h3 className="text-sm font-black text-emerald-700">🏃 운동 추천</h3>
+        <h3 className="text-sm font-black text-emerald-700">
+          {excessKcal > 0 ? '🏃 운동 추천' : '🚶 오늘의 활동'}
+        </h3>
         <p className="mt-1 text-xs font-bold text-emerald-700/80">{headline(excessKcal)}</p>
       </div>
       <ul className="space-y-2">

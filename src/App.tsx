@@ -917,10 +917,11 @@ export default function App() {
                 </div>
               </section>
 
-              {/* T-055d 운동/간식 추천 — 노출 조건 배타적: 초과면 운동, 여유면 간식 */}
-              {excessKcal > 0 && exerciseRecs.length > 0 && (
+              {/* 운동 추천 — T-057 (2): 초과면 강도별 3개, 정상/부족이어도 일상 활동 1~2개 */}
+              {exerciseRecs.length > 0 && (
                 <ExerciseRecommendCard excessKcal={excessKcal} exercises={exerciseRecs} />
               )}
+              {/* 간식 추천 — 칼로리 여유 + 영양 부족 시. 운동과 동시 노출 허용 */}
               {excessKcal <= 0 && snackRec.snacks.length > 0 && (
                 <SnackRecommendCard snacks={snackRec.snacks} missing={snackRec.missing} />
               )}
