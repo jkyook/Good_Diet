@@ -459,7 +459,10 @@ export default function App() {
             setLoadingStep(event.index);
             setStepDetails(prev => ({ ...prev, [event.index]: event.detail }));
           } else if (event.type === 'provider-fallback') {
-            showToast(`${PROVIDER_LABELS[event.from]} ${event.reason === 'parse' ? '응답 파싱 실패' : '할당량 초과'} → 다음 프로바이더 전환`, 'error');
+            // T-058: provider 이름을 사용자에게 노출하지 않음 (Grok 고정 UI).
+            // 서버 로그에는 PROVIDER_LABELS[event.from] (${event.reason})로 남길 수 있도록 console만.
+            console.info('[analyze] provider fallback:', PROVIDER_LABELS[event.from], event.reason);
+            showToast('분석을 다시 시도하는 중…', 'error');
             setLoadingStep(0);
             setStepDetails({});
           }
@@ -467,9 +470,7 @@ export default function App() {
 
         // 폴백은 서버(/api/analyze)에서 처리됨 — 클라이언트는 한 번만 호출
         const analysis = await analyzeFood(base64, age, gender, inHistory + inBatch, analysisMode, provider, onEvent);
-        if (analysis.provider !== provider) {
-          showToast(`${PROVIDER_LABELS[analysis.provider]} 로 분석 완료!`);
-        }
+        // T-058: analysis.provider 변경 사실은 사용자에게 노출하지 않음.
         results.push({ ...analysis, id: img.id, image: base64, mealType });
       }
 
@@ -1144,28 +1145,8 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* AI 엔진 */}
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase text-slate-500">AI 엔진</label>
-                        <div className="flex border-[3px] border-slate-900 shadow-[3px_3px_0_0_rgba(15,23,42,1)] overflow-hidden">
-                          {([
-                            { value: 'claude' as AIProvider, icon: '🟠', name: 'Claude', sub: 'Anthropic', available: health.claude },
-                            { value: 'gemini' as AIProvider, icon: '🔵', name: 'Gemini', sub: 'Google · Flash', available: health.gemini },
-                            { value: 'groq' as AIProvider, icon: '🟢', name: 'Grok', sub: 'xAI · fallback', available: health.groq },
-                          ]).map(({ value, icon, name, sub, available }, i) => (
-                            <button key={value} onClick={() => available && setProvider(value)}
-                              title={available ? undefined : `.env에 API 키를 추가해주세요`}
-                              className={`flex-1 py-2.5 flex items-center justify-center gap-1 transition-colors ${i > 0 ? 'border-l-[3px] border-slate-900' : ''} ${!available ? 'opacity-35 cursor-not-allowed bg-slate-50' : provider === value ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}
-                            >
-                              <span className="text-sm leading-none">{icon}</span>
-                              <div className="text-left">
-                                <p className="text-[10px] font-black uppercase leading-tight">{name}</p>
-                                <p className={`hidden sm:block text-[8px] font-bold leading-tight ${provider === value && available ? 'text-orange-300' : 'text-slate-400'}`}>{available ? sub : '키 없음'}</p>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                      {/* AI 엔진 선택 UI는 T-058에서 숨김 (Grok 고정).
+                          provider state + health 자동 선택 + fallback 로직은 보존 — 재활성화 시 본 블록만 복원. */}
 
                       {/* 분석 모드 */}
                       <div className="space-y-1.5">
