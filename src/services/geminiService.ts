@@ -30,7 +30,7 @@ export class InsufficientCalError extends Error {
 }
 
 export type AnalysisMode = 'quick' | 'detailed';
-export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'dessert';
 export type AIProvider = 'gemini' | 'claude' | 'groq';
 export type FoodCategory = '고기' | '야채' | '면' | '기타';
 

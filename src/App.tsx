@@ -75,6 +75,7 @@ const MEAL_TYPES: { value: MealType; emoji: string; label: string }[] = [
   { value: 'lunch',     emoji: '☀️', label: '점심' },
   { value: 'dinner',    emoji: '🌙', label: '저녁' },
   { value: 'snack',     emoji: '🍎', label: '간식' },
+  { value: 'dessert',   emoji: '🍰', label: '후식' },
 ];
 
 const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
@@ -129,6 +130,7 @@ export default function App() {
   // T-067 (2): 분석 모드 UI 숨김 + 'detailed' 고정 (분석 결과 풍부함 우선).
   const [analysisMode] = useState<AnalysisMode>('detailed');
   const [mealType, setMealType] = useState<MealType>(() => inferMealTypeByTime());
+  const [portionCount, setPortionCount] = useState<number>(1);
   const [provider, setProvider] = useState<AIProvider>('groq');
   const [health, setHealth] = useState<ProviderHealth>({ gemini: false, claude: false, groq: false });
   const [error, setError] = useState<string | null>(null);
@@ -463,7 +465,7 @@ export default function App() {
         // 폴백은 서버(/api/analyze)에서 처리됨 — 클라이언트는 한 번만 호출
         const analysis = await analyzeFood(base64, age, gender, inHistory + inBatch, analysisMode, provider, onEvent);
         // T-058: analysis.provider 변경 사실은 사용자에게 노출하지 않음.
-        results.push({ ...analysis, id: img.id, image: base64, mealType });
+        results.push({ ...analysis, id: img.id, image: base64, mealType, portionCount });
       }
 
       setHistory(prev => [...results, ...prev]);
@@ -1004,6 +1006,7 @@ export default function App() {
                             id: `batch-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
                             image,
                             mealType,
+                            portionCount,
                         }));
                         setHistory(prev => [...records, ...prev]);
                         if (user) {
@@ -1065,13 +1068,28 @@ export default function App() {
                       {/* 식사 종류 */}
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-black uppercase text-slate-500">식사 종류</label>
-                        <div className="grid grid-cols-4 border-[3px] border-slate-900 shadow-[3px_3px_0_0_rgba(15,23,42,1)] overflow-hidden">
+                        <div className="grid grid-cols-5 border-[3px] border-slate-900 shadow-[3px_3px_0_0_rgba(15,23,42,1)] overflow-hidden">
                           {MEAL_TYPES.map((type, i) => (
                             <button key={type.value} onClick={() => setMealType(type.value)}
                               className={`py-2.5 flex flex-col items-center gap-0.5 transition-colors ${i > 0 ? 'border-l-[2px] border-slate-900' : ''} ${mealType === type.value ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}
                             >
                               <span className="text-sm">{type.emoji}</span>
                               <span className={`text-[8px] font-black uppercase ${mealType === type.value ? 'text-orange-300' : 'text-slate-400'}`}>{type.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 인분 — T-067 (3): 1~4+ 셀렉터. 분석 결과 자체 환산 X (메타데이터만 저장) */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase text-slate-500">몇 인분?</label>
+                        <div className="grid grid-cols-4 border-[3px] border-slate-900 shadow-[3px_3px_0_0_rgba(15,23,42,1)] overflow-hidden">
+                          {([1, 2, 3, 4] as const).map((n, i) => (
+                            <button key={n} type="button" onClick={() => setPortionCount(n)}
+                              className={`py-2.5 flex flex-col items-center transition-colors ${i > 0 ? 'border-l-[2px] border-slate-900' : ''} ${portionCount === n ? 'bg-slate-900 text-white' : 'bg-white text-slate-700'}`}
+                            >
+                              <span className="text-sm font-black">{n === 4 ? '4+' : n}</span>
+                              <span className={`text-[8px] font-black uppercase ${portionCount === n ? 'text-orange-300' : 'text-slate-400'}`}>인분</span>
                             </button>
                           ))}
                         </div>

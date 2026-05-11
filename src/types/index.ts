@@ -6,6 +6,8 @@ export interface MealRecord extends AnalysisResult {
   id: string;
   image: string;
   mealType: MealType;
+  /** T-067 (3): 인분 메타데이터 (기본 1). 분석 결과 자체는 환산하지 않음 — 참고 표시용. */
+  portionCount?: number;
 }
 
 export interface DailyScore {

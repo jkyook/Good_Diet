@@ -11,6 +11,7 @@ const MEAL_TYPE_LABELS: Record<MealType, { emoji: string; label: string }> = {
   lunch:     { emoji: '☀️', label: '점심' },
   dinner:    { emoji: '🌙', label: '저녁' },
   snack:     { emoji: '🍎', label: '간식' },
+  dessert:   { emoji: '🍰', label: '후식' },
 };
 
 // 적정(70~100%): #22C55E | 부족(~70%): #EAB308 | 초과(100%+): #EF4444
@@ -37,7 +38,7 @@ const CONFIDENCE_STYLE: Record<string, string> = {
 };
 
 interface Props {
-  meal: AnalysisResult & { id: string; image: string; mealType: MealType };
+  meal: AnalysisResult & { id: string; image: string; mealType: MealType; portionCount?: number };
   dailyCalorieTarget: number;
   dailyCalorieConsumed: number;
   onBack: () => void;
@@ -100,6 +101,11 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
           {/* 음식명 + 감지 태그 */}
           <h2 className="text-lg font-black text-gray-900">{meal.foodName}</h2>
           <div className="flex flex-wrap gap-1.5 mt-2">
+            {meal.portionCount && meal.portionCount > 1 && (
+              <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-black">
+                🍽 {meal.portionCount === 4 ? '4+' : meal.portionCount}인분
+              </span>
+            )}
             {meal.detectedFoods?.map(f => (
               <span key={f} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{f}</span>
             ))}

@@ -9,9 +9,10 @@ const MEAL_LABELS: Record<MealType, { emoji: string; label: string }> = {
   lunch:     { emoji: '☀️', label: '점심' },
   dinner:    { emoji: '🌙', label: '저녁' },
   snack:     { emoji: '🍎', label: '간식' },
+  dessert:   { emoji: '🍰', label: '후식' },
 };
 
-const MEAL_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
+const MEAL_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack', 'dessert'];
 
 interface Props {
   date?: string; // YYYY-MM-DD, 기본값 오늘
@@ -47,6 +48,7 @@ function buildSummary(records: MealRecord[], targetDate: string): DaySummary {
     lunch: [],
     dinner: [],
     snack: [],
+    dessert: [],
   };
 
   let totalCalories = 0, totalProtein = 0, totalCarbs = 0, totalFat = 0;
@@ -66,7 +68,7 @@ export default function DayMealLog({ date, records, dailyCalorieTarget = 2000, o
   const targetDate = date ?? today;
 
   const summary = useMemo(() => buildSummary(records, targetDate), [records, targetDate]);
-  const [expandedTypes, setExpandedTypes] = useState<Set<MealType>>(new Set(['breakfast', 'lunch', 'dinner', 'snack']));
+  const [expandedTypes, setExpandedTypes] = useState<Set<MealType>>(new Set(['breakfast', 'lunch', 'dinner', 'snack', 'dessert']));
 
   const handleDelete = (id: string) => {
     onDeleteMeal(id);

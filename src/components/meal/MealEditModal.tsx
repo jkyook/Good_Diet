@@ -7,6 +7,7 @@ const MEAL_TYPE_OPTIONS: { value: MealType; emoji: string; label: string }[] = [
   { value: 'lunch',     emoji: '🥗', label: '점심' },
   { value: 'dinner',    emoji: '🍝', label: '저녁' },
   { value: 'snack',     emoji: '🍪', label: '간식' },
+  { value: 'dessert',   emoji: '🍰', label: '후식' },
 ];
 
 function pad(n: number): string { return n < 10 ? `0${n}` : `${n}`; }
@@ -142,7 +143,7 @@ export default function MealEditModal({ open, meal, todayKey, onSave, onClose }:
             {/* 식사 종류 */}
             <div>
               <p className="text-xs font-black text-slate-500 mb-2">식사 종류</p>
-              <div role="radiogroup" aria-label="식사 종류" className="grid grid-cols-4 gap-2">
+              <div role="radiogroup" aria-label="식사 종류" className="grid grid-cols-5 gap-1.5">
                 {MEAL_TYPE_OPTIONS.map(opt => {
                   const active = opt.value === mealType;
                   return (
