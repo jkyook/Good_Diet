@@ -14,3 +14,7 @@ coverage/
 migrations/*.bak
 migrations/*.bak[0-9]
 migrations/*.bak.*
+
+# T-069 식품 DB import 데이터 (대용량, 로컬 전용)
+data/foods/
+
