@@ -3,10 +3,18 @@ import type { MealRecord, DailyScore } from '../types';
 const IDEAL_MACRO = { carbs: 50, protein: 25, fat: 25 };
 const WEIGHTS = { calorie: 0.4, macro: 0.3, timing: 0.15, variety: 0.15 };
 
-function calcCalorieScore(ratio: number): number {
+// T-060 (1): 부분 점수 산식 — "조금 먹었어도 노력 인정".
+// - 이상 범위 (0.85~1.05): 100점 (그대로)
+// - 부족 (ratio < 0.85): 계수 100 — 0.85에서 100, 0에서 15
+// - 초과 (ratio > 1.05): 계수 80 — 1.05에서 100, 2.0에서 24 (과식이 부족보다 큰 감점)
+// - 식사 1끼 이상이면 최소 15점 floor (mealCount=0이면 0)
+function calcCalorieScore(ratio: number, mealCount: number): number {
+  if (mealCount === 0) return 0;
   if (ratio >= 0.85 && ratio <= 1.05) return 100;
-  if (ratio < 0.85) return Math.max(0, Math.round(100 - (0.85 - ratio) * 300));
-  return Math.max(0, Math.round(100 - (ratio - 1.05) * 250));
+  const raw = ratio < 0.85
+    ? 100 - (0.85 - ratio) * 100  // 부족: 부드러운 감점
+    : 100 - (ratio - 1.05) * 80;  // 초과: 다소 강한 감점
+  return Math.max(15, Math.min(100, Math.round(raw)));
 }
 
 function calcMacroRatio(meals: MealRecord[]) {
@@ -71,7 +79,7 @@ export function calcDailyScore(
   const totalCalories = meals.reduce((s, m) => s + (m.calories || 0), 0);
   const ratio = totalCalories / (targetCalories || 1);
 
-  const calorieScore  = calcCalorieScore(ratio);
+  const calorieScore  = calcCalorieScore(ratio, meals.length);
   const actualMacro   = calcMacroRatio(meals);
   const macroScore    = calcMacroScore(actualMacro);
   const timingScore   = calcTimingScore(meals);
