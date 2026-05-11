@@ -1,0 +1,28 @@
+[
+  {
+    "brand": "스타벅스",
+    "name": "아메리카노 Tall",
+    "source_id": "starbucks-americano-tall",
+    "category": "음료",
+    "serving_grams": 355,
+    "calories": 10,
+    "protein": 0.6,
+    "carbs": 0,
+    "fat": 0,
+    "sodium": 5,
+    "url": "https://www.starbucks.co.kr/menu/drink_view.do"
+  },
+  {
+    "brand": "스타벅스",
+    "name": "카페라떼 Tall",
+    "source_id": "starbucks-latte-tall",
+    "category": "음료",
+    "serving_grams": 355,
+    "calories": 190,
+    "protein": 9,
+    "carbs": 15,
+    "fat": 10,
+    "sodium": 130,
+    "url": "https://www.starbucks.co.kr/menu/drink_view.do"
+  }
+]
