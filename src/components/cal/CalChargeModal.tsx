@@ -12,11 +12,17 @@ const PAYMENT_METHODS: { id: PaymentMethod; label: string; emoji: string }[] = [
 
 interface CalChargeModalProps {
   open: boolean;
+  /** 현재 cal 잔액 (헤더 표시용) */
+  calBalance?: number;
+  /** 오늘 분석 사용 횟수 (헤더 표시용) */
+  dailyUsageCount?: number;
+  /** 오늘 분석 한도 (헤더 표시용) */
+  dailyLimit?: number;
   onPay: (packageId: CalPackageId, method: PaymentMethod) => void | Promise<void>;
   onClose: () => void;
 }
 
-export default function CalChargeModal({ open, onPay, onClose }: CalChargeModalProps) {
+export default function CalChargeModal({ open, calBalance, dailyUsageCount, dailyLimit, onPay, onClose }: CalChargeModalProps) {
   const [selectedPkg, setSelectedPkg] = useState<CalPackageId>('medium');
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('toss');
   const [submitting, setSubmitting] = useState(false);
@@ -69,6 +75,25 @@ export default function CalChargeModal({ open, onPay, onClose }: CalChargeModalP
                   닫기
                 </button>
               </div>
+
+              {/* T-060 (3): 현재 잔액 + 오늘 사용량 (chip 클릭 진입 시 명시) */}
+              {(calBalance !== undefined || dailyUsageCount !== undefined) && (
+                <div className="bg-orange-50 rounded-2xl px-4 py-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest">현재 잔액</p>
+                    <p className="mt-0.5 text-xl font-black text-orange-700">
+                      <span aria-hidden="true">🌰</span> {calBalance ?? 0} <span className="text-xs">cal</span>
+                    </p>
+                  </div>
+                  {dailyUsageCount !== undefined && dailyLimit !== undefined && (
+                    <div className="text-right">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">오늘 무료</p>
+                      <p className="mt-0.5 text-sm font-black text-slate-700">{dailyUsageCount}/{dailyLimit} 사용</p>
+                      <p className="text-[10px] font-bold text-slate-400">{Math.max(0, dailyLimit - dailyUsageCount)}회 남음</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 패키지 라디오 리스트 */}
               <div role="radiogroup" aria-label="충전 패키지 선택" className="space-y-2">

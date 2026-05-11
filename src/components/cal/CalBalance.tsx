@@ -25,26 +25,26 @@ export default function CalBalance({
   }
 
   const limitReached = dailyUsageCount >= dailyLimit && calBalance < 1;
-  const lowBalance = !limitReached && calBalance > 0 && calBalance <= 1 && dailyUsageCount >= dailyLimit;
+  const lowBalance = !limitReached && calBalance <= 1 && dailyUsageCount >= dailyLimit;
 
+  // T-060 (3): admin "🛡️ 무제한"과 비슷한 단순 아이콘 칩으로 통일.
+  // 사용량(N/3)은 모달 안에서 확인 — chip은 잔액만 표시.
   const bg = limitReached
     ? 'bg-orange-500 text-white'
     : lowBalance
     ? 'bg-orange-50 text-orange-600 ring-1 ring-orange-200'
-    : 'bg-orange-50 text-slate-700';
+    : 'bg-orange-50 text-orange-700 ring-1 ring-orange-100';
 
   const remaining = Math.max(0, dailyLimit - dailyUsageCount);
-  const ariaLabel = `오늘 분석 ${dailyUsageCount}회 사용, ${remaining}회 남음. cal ${calBalance} 보유. 탭하여 충전`;
+  const ariaLabel = `cal ${calBalance} 보유. 오늘 무료 분석 ${remaining}회 남음. 탭하여 잔액 보기`;
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`min-h-11 px-3 py-1 rounded-full text-xs font-black active:scale-95 transition-transform inline-flex items-center gap-1.5 ${bg}`}
+      className={`min-h-11 px-3 py-1 rounded-full text-xs font-black active:scale-95 transition-transform inline-flex items-center gap-1 ${bg}`}
       aria-label={ariaLabel}
     >
-      <span>{dailyUsageCount}/{dailyLimit}</span>
-      <span className="opacity-50">·</span>
       <span aria-hidden="true">🌰</span>
       <span>{calBalance} cal</span>
     </button>

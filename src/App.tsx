@@ -1454,6 +1454,9 @@ export default function App() {
 
       <CalChargeModal
         open={showChargeModal}
+        calBalance={me?.cal_balance}
+        dailyUsageCount={me?.daily_usage_count}
+        dailyLimit={FREE_DAILY_LIMIT}
         onPay={async (pkgId: CalPackageId) => {
           try {
             const r = await initPayment(pkgId);
