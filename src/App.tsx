@@ -43,6 +43,7 @@ import CalChargeModal from './components/cal/CalChargeModal';
 import AdRewardModal from './components/cal/AdRewardModal';
 import MealCardMenu from './components/meal/MealCardMenu';
 import MealEditModal from './components/meal/MealEditModal';
+import AnalyzeModeTabs from './components/analyze/AnalyzeModeTabs';
 import { calcDailyScore } from './services/scoreService';
 import { compressImage, fileToDataUrl } from './utils/imageCompress';
 import type { AnalysisStep } from './components/AnalysisProgress.types';
@@ -984,6 +985,14 @@ export default function App() {
           {/* ════ 분석 탭 ════ */}
           {mainTab === 'analyze' && (
             <motion.div key="analyze" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="p-4">
+              {/* sub-탭 — selectedMeal 표시 중에는 의미 없으므로 숨김, 분석 진행 중에는 잠금 */}
+              {!selectedMeal && (
+                <AnalyzeModeTabs
+                  mode={analyzeMode}
+                  onChange={setAnalyzeMode}
+                  locked={loading || batchLoading}
+                />
+              )}
               <AnimatePresence mode="wait">
                 {loading ? (
                   <motion.div key="loading" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
@@ -1018,6 +1027,31 @@ export default function App() {
                     {selectedMeal.recommendations && (
                       <RecommendationCards recommendations={selectedMeal.recommendations} />
                     )}
+                  </motion.div>
+
+                ) : analyzeMode === 'batch' ? (
+                  <motion.div key="batch" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                    <BatchAnalyzer
+                      age={age}
+                      gender={gender}
+                      provider={provider}
+                      mealType={mealType}
+                      onLoadingChange={setBatchLoading}
+                      onComplete={(items: BatchAnalysisCompletion[]) => {
+                        const records: MealRecord[] = items.map(({ result, image }) => ({
+                            ...result,
+                            id: `batch-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+                            image,
+                            mealType,
+                        }));
+                        setHistory(prev => [...records, ...prev]);
+                        if (user) {
+                          void Promise.all(records.map(r => saveMeal(r, user.id)));
+                        }
+                        if (records[0]) setSelectedMeal(records[0]);
+                        showToast(`${records.length}개 일괄 분석 완료!`);
+                      }}
+                    />
                   </motion.div>
 
                 ) : (
@@ -1132,29 +1166,6 @@ export default function App() {
                           </div>
                         </div>
                       )}
-
-                      {/* 배치 분석 */}
-                      <BatchAnalyzer
-                        age={age}
-                        gender={gender}
-                        provider={provider}
-                        mealType={mealType}
-                        onLoadingChange={setBatchLoading}
-                        onComplete={(items: BatchAnalysisCompletion[]) => {
-                          const records: MealRecord[] = items.map(({ result, image }) => ({
-                              ...result,
-                              id: `batch-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
-                              image,
-                              mealType,
-                          }));
-                          setHistory(prev => [...records, ...prev]);
-                          if (user) {
-                            void Promise.all(records.map(r => saveMeal(r, user.id)));
-                          }
-                          if (records[0]) setSelectedMeal(records[0]);
-                          showToast(`${records.length}개 일괄 분석 완료!`);
-                        }}
-                      />
 
                       {/* 분석 버튼 */}
                       <button onClick={() => void startAnalysis()} disabled={loading || images.length === 0}
