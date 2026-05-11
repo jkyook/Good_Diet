@@ -18,6 +18,7 @@ import {
   InsufficientCalError,
 } from './services/geminiService';
 import { fetchMe, chargeAd, initPayment, type MeResponse } from './services/calService';
+import { updateAccount } from './services/supabaseService';
 import { FREE_DAILY_LIMIT, type CalPackageId } from './config/packages';
 import { inferMealTypeByTime } from './utils/mealTime';
 import {
@@ -41,6 +42,7 @@ import CalBalance from './components/cal/CalBalance';
 import CalLimitModal from './components/cal/CalLimitModal';
 import CalChargeModal from './components/cal/CalChargeModal';
 import AdRewardModal from './components/cal/AdRewardModal';
+import AccountModal from './components/cal/AccountModal';
 import MealCardMenu from './components/meal/MealCardMenu';
 import MealEditModal from './components/meal/MealEditModal';
 import MealPreviewModal from './components/meal/MealPreviewModal';
@@ -157,6 +159,7 @@ export default function App() {
   const [editingMeal, setEditingMeal] = useState<MealRecord | null>(null);
   const [previewingMeal, setPreviewingMeal] = useState<MealRecord | null>(null);
   const [analyzeMode, setAnalyzeMode] = useState<'single' | 'batch'>('single');
+  const [showAccountModal, setShowAccountModal] = useState(false);
 
   // --- Overlays ---
   const [toast, setToast] = useState<Toast | null>(null);
@@ -751,14 +754,15 @@ export default function App() {
       </AnimatePresence>
 
       {/* ── 상단 헤더 (sticky) ── */}
-      <header className="sticky top-0 z-40 bg-white border-b-[3px] border-slate-900 px-4 py-3 flex justify-between items-center shadow-[0_4px_0_0_rgba(15,23,42,1)]">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-orange-500 rounded-lg flex items-center justify-center shadow-md -rotate-12">
-            <Utensils className="text-white w-4 h-4" />
+      <header className="sticky top-0 z-40 bg-white border-b-[3px] border-slate-900 px-3 py-2.5 flex justify-between items-center gap-2 shadow-[0_4px_0_0_rgba(15,23,42,1)]">
+        {/* T-061: 로고 축소 — 모바일 360px에서 한 줄 보장 */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="w-6 h-6 bg-orange-500 rounded-md flex items-center justify-center shadow-md -rotate-12">
+            <Utensils className="text-white w-3.5 h-3.5" />
           </div>
-          <span className="font-black text-lg tracking-tighter">fat<span className="text-orange-500">guard</span> <span className="text-slate-300 text-sm">🛡️</span></span>
+          <span className="font-black text-sm tracking-tighter">fat<span className="text-orange-500">guard</span></span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
           {me && (
             <CalBalance
               dailyUsageCount={me.daily_usage_count}
@@ -768,15 +772,21 @@ export default function App() {
               onClick={() => setShowChargeModal(true)}
             />
           )}
-          <div className="text-right">
+          {/* T-061: '오늘 칼로리' 표시는 모바일에서 숨김 (헤더 wrap 방지). 정보는 홈 진행률에서 확인. */}
+          <div className="text-right hidden sm:block">
             <p className="text-[9px] font-black text-slate-400 uppercase leading-none">오늘</p>
             <p className="text-xs font-black leading-tight">{todayCalories.toLocaleString()}<span className="opacity-40 text-[10px]">/{dailyCalorieTarget.toLocaleString()}</span></p>
           </div>
           {SUPABASE_AVAILABLE && (
             user ? (
-              <button onClick={handleLogout}
-                className="px-2 py-1 text-[9px] font-black uppercase border-[2px] border-slate-900 bg-white hover:bg-rose-50 transition-colors shadow-[2px_2px_0_0_rgba(15,23,42,1)]"
-              >로그아웃</button>
+              <button
+                onClick={() => setShowAccountModal(true)}
+                className="min-h-11 px-2.5 py-1 max-w-[120px] truncate text-xs font-black text-slate-700 bg-slate-50 ring-1 ring-slate-200 rounded-full active:scale-95 transition-transform"
+                aria-label={`계정: ${user.email}`}
+                title={user.email}
+              >
+                {user.email?.split('@')[0] ?? '계정'}
+              </button>
             ) : (
               <button onClick={() => { setShowAuthModal(true); setAuthMode('login'); setAuthError(null); }}
                 className="px-2 py-1 text-[9px] font-black uppercase border-[2px] border-slate-900 bg-orange-500 text-white shadow-[2px_2px_0_0_rgba(15,23,42,1)]"
@@ -1487,6 +1497,23 @@ export default function App() {
         dailyCalorieTarget={dailyCalorieTarget}
         dailyCalorieConsumed={previewingMeal ? getDailyStats(previewingMeal.date).calories : 0}
         onClose={() => setPreviewingMeal(null)}
+      />
+
+      <AccountModal
+        open={showAccountModal}
+        me={me}
+        onSave={async (patch) => {
+          if (!user) return;
+          const { error } = await updateAccount(user.id, patch);
+          if (error) { showToast(`저장 실패: ${error}`, 'error'); return; }
+          // me 갱신 + 로컬 칼로리 목표 계산용 age/gender state도 동기화
+          setMe(prev => prev ? { ...prev, age: patch.age ?? prev.age, gender: patch.gender ?? prev.gender } : prev);
+          if (patch.age !== undefined && patch.age !== null) setAge(patch.age);
+          if (patch.gender !== undefined && patch.gender !== null) setGender(patch.gender);
+          showToast('계정 정보가 업데이트됐어요 ✨');
+        }}
+        onLogout={() => { void handleLogout(); }}
+        onClose={() => setShowAccountModal(false)}
       />
 
       <AdRewardModal
