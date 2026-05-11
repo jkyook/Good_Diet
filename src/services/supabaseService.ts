@@ -247,6 +247,45 @@ export async function reportMatchCorrection(input: {
   return { error: error ? error.message : null };
 }
 
+// T-075: 정정 신고 list 조회 (read-only).
+// RLS: 자기 행 + admin 전체 SELECT — admin이 호출하면 모든 사용자 신고 보임.
+export interface MatchCorrectionRow {
+  id: string;
+  created_at: string;
+  ai_result_food_name: string | null;
+  matched_food_id: string | null;
+  user_correction: string | null;
+  user_id: string | null;
+  status: 'pending' | 'reviewed' | 'merged';
+  foods?: { name: string; brand: string | null } | null;
+}
+
+export async function fetchMatchCorrections(opts?: { limit?: number }): Promise<MatchCorrectionRow[]> {
+  if (!supabase) return [];
+  const limit = opts?.limit ?? 50;
+  const { data, error } = await supabase
+    .from('food_match_corrections')
+    .select('id, created_at, ai_result_food_name, matched_food_id, user_correction, user_id, status, foods(name, brand)')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error || !data) return [];
+  // supabase-js는 foods relation을 배열로 반환할 수 있어 단일 객체로 정규화
+  return data.map((r: Record<string, unknown>) => {
+    const fRaw = r.foods;
+    const foods = Array.isArray(fRaw) ? fRaw[0] : fRaw;
+    return {
+      id: r.id as string,
+      created_at: r.created_at as string,
+      ai_result_food_name: (r.ai_result_food_name as string | null) ?? null,
+      matched_food_id: (r.matched_food_id as string | null) ?? null,
+      user_correction: (r.user_correction as string | null) ?? null,
+      user_id: (r.user_id as string | null) ?? null,
+      status: (r.status as 'pending' | 'reviewed' | 'merged') ?? 'pending',
+      foods: foods ? { name: (foods as { name: string }).name, brand: ((foods as { brand?: string | null }).brand ?? null) } : null,
+    };
+  });
+}
+
 // 계정 정보 (age/gender) 업데이트 — T-061.
 // RLS UPDATE policy (users_update_own_safe)로 자기 행만 가능.
 // REVOKE는 role/cal_balance/daily_usage_* 한정이라 age/gender는 자유 update OK.

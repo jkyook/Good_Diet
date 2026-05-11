@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogOut } from 'lucide-react';
 import type { MeResponse } from '../../services/calService';
+import { fetchMatchCorrections, type MatchCorrectionRow } from '../../services/supabaseService';
 
 export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active';
 
@@ -59,6 +60,10 @@ export default function AccountModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // T-075: admin 전용 정정 신고 list (read-only)
+  const [corrections, setCorrections] = useState<MatchCorrectionRow[] | null>(null);
+  const [correctionsLoading, setCorrectionsLoading] = useState(false);
+
   useEffect(() => {
     if (!open) return;
     setAge(profile.age !== null ? String(profile.age) : (me?.age != null ? String(me.age) : ''));
@@ -68,6 +73,15 @@ export default function AccountModal({
     setActivityLevel(profile.activityLevel);
     setError(null);
   }, [open, profile, me]);
+
+  // T-075: admin 진입 시 정정 신고 list fetch (최근 50건)
+  useEffect(() => {
+    if (!open || me?.role !== 'admin') return;
+    setCorrectionsLoading(true);
+    void fetchMatchCorrections({ limit: 50 })
+      .then(setCorrections)
+      .finally(() => setCorrectionsLoading(false));
+  }, [open, me?.role]);
 
   useEffect(() => {
     if (!open) return;
@@ -289,6 +303,57 @@ export default function AccountModal({
                     'column ... does not exist' 메시지는 T-061 SQL 미실행 환경입니다.
                   </p>
                 </div>
+              )}
+
+              {/* T-075: admin 전용 정정 신고 list (read-only) */}
+              {me.role === 'admin' && (
+                <section className="pt-2 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">
+                      🛡️ 정정 신고 (read-only, 최근 50건)
+                    </p>
+                    {corrections && (
+                      <span className="text-[10px] font-bold text-slate-500">{corrections.length}건</span>
+                    )}
+                  </div>
+                  {correctionsLoading && (
+                    <p className="text-[11px] font-bold text-slate-400">불러오는 중…</p>
+                  )}
+                  {!correctionsLoading && corrections && corrections.length === 0 && (
+                    <p className="text-[11px] font-bold text-slate-400">신고 없음.</p>
+                  )}
+                  {!correctionsLoading && corrections && corrections.length > 0 && (
+                    <ul className="space-y-1.5 max-h-64 overflow-y-auto bg-slate-50 rounded-xl p-2">
+                      {corrections.map(row => {
+                        const dt = new Date(row.created_at).toLocaleString('ko-KR', {
+                          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                        });
+                        const matched = row.foods?.name
+                          ? `${row.foods.name}${row.foods.brand ? ` · ${row.foods.brand}` : ''}`
+                          : (row.matched_food_id ? '(food deleted)' : '(매칭 없음)');
+                        return (
+                          <li key={row.id} className="bg-white rounded-lg px-2.5 py-2 border border-slate-100">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[10px] font-black text-slate-400">{dt}</span>
+                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${row.status === 'merged' ? 'bg-emerald-100 text-emerald-700' : row.status === 'reviewed' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                                {row.status}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-[11px] font-bold text-slate-700 break-all">
+                              <span className="text-slate-400">AI: </span>{row.ai_result_food_name ?? '—'}
+                            </p>
+                            <p className="text-[11px] font-bold text-emerald-700 break-all">
+                              <span className="text-emerald-500">DB: </span>{matched}
+                            </p>
+                            <p className="text-[11px] font-bold text-orange-700 break-all">
+                              <span className="text-orange-500">→ </span>{row.user_correction ?? '—'}
+                            </p>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
               )}
 
               {/* T-069 Q4: 데이터 출처 표시 */}
