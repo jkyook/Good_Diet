@@ -1,16 +1,29 @@
 // T-069 Phase 1B: 식품 데이터 bulk import.
-// 입력: CSV 또는 JSONL 파일 (./data/foods/*.csv 또는 *.jsonl)
+// 입력: CSV / XLSX / JSONL / JSON 파일 (./data/foods/*)
 // 출력: Supabase foods 테이블 (upsert by source + source_id)
 //
 // 실행:
 //   1. .env에 SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY 설정 (또는 환경변수)
 //   2. ./data/foods/ 에 입력 파일 둠 — 공공데이터포털 "식품영양성분 데이터"
-//      https://www.data.go.kr/ → "식품영양성분" 검색 → 다운로드 (CSV)
-//      EUC-KR 인코딩이면 UTF-8로 변환:  iconv -f EUC-KR -t UTF-8 source.csv > target.csv
-//   3. npm run import:foods -- ./data/foods/your_file.csv public_data
-//      (인자: 파일경로, source 라벨)
+//   3. 예시:
+//      # 음식 표준데이터 (CSV, 한식/양식 등 일반 식품)
+//      npm run import:foods -- ./data/foods/standard_food.csv public_data_food
+//      # 가공식품 (XLSX, 식약처) — T-069c-xlsx 추가
+//      npm run import:foods -- ./data/foods/20260429_가공식품_277074건.xlsx mfds_processed
+//      # JSONL (직접 만든 형식)
+//      npm run import:foods -- ./data/foods/custom.jsonl user_curated
 //
-// 입력 형식 (CSV 헤더 한국어 — 공공데이터포털 표준):
+//   CSV가 EUC-KR이면 UTF-8 변환: iconv -f EUC-KR -t UTF-8 src.csv > target.csv
+//   XLSX는 인코딩 변환 불필요 (UTF-8 내장).
+//
+// source 라벨 가이드:
+//   public_data_food   — 공공데이터포털 일반 식품 표준데이터
+//   mfds_processed     — 식약처 가공식품 데이터
+//   mfds_restaurant    — 식약처 외식 영양성분 (있으면)
+//   franchise          — 외식 프랜차이즈 (import_franchise.ts가 사용)
+//   user_curated       — 수동 입력
+//
+// 입력 형식 (CSV/XLSX 헤더 한국어 — 공공데이터포털 표준):
 //   식품명, 식품코드(옵션), 식품군, 1회제공량(g), 에너지(kcal),
 //   단백질(g), 탄수화물(g), 지방(g), 식이섬유(g), 나트륨(mg)
 //
@@ -20,6 +33,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { parse } from 'csv-parse/sync';
+import * as XLSX from 'xlsx';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -126,24 +140,40 @@ async function main(): Promise<void> {
   });
 
   const absPath = path.resolve(filePath);
-  const raw = fs.readFileSync(absPath, 'utf-8');
   const ext = path.extname(absPath).toLowerCase();
 
   let rows: FoodRow[] = [];
   if (ext === '.csv') {
+    const raw = fs.readFileSync(absPath, 'utf-8');
     const parsed = parse(raw, { columns: true, skip_empty_lines: true, trim: true }) as Record<string, unknown>[];
     rows = parsed.map(r => fromCsvRow(r, sourceArg)).filter((r): r is FoodRow => r !== null);
+  } else if (ext === '.xlsx' || ext === '.xls') {
+    // SheetJS는 binary buffer 권장 — 첫 sheet → JSON 행 객체. defval: null로 빈 셀은 null.
+    const buf = fs.readFileSync(absPath);
+    const wb = XLSX.read(buf, { type: 'buffer' });
+    const firstSheetName = wb.SheetNames[0];
+    if (!firstSheetName) {
+      console.error('XLSX에 sheet가 없습니다.');
+      process.exit(1);
+    }
+    const sheet = wb.Sheets[firstSheetName];
+    const parsed = XLSX.utils.sheet_to_json(sheet, { defval: null }) as Record<string, unknown>[];
+    console.log(`[xlsx] sheet '${firstSheetName}' — ${parsed.length}행 로드 (헤더 자동 감지)`);
+    rows = parsed.map(r => fromCsvRow(r, sourceArg)).filter((r): r is FoodRow => r !== null);
   } else if (ext === '.jsonl' || ext === '.ndjson') {
+    const raw = fs.readFileSync(absPath, 'utf-8');
     rows = raw.split('\n').map(l => fromJsonlLine(l, sourceArg)).filter((r): r is FoodRow => r !== null);
   } else if (ext === '.json') {
+    const raw = fs.readFileSync(absPath, 'utf-8');
     const arr = JSON.parse(raw) as Record<string, unknown>[];
     rows = arr.map(r => fromJsonlLine(JSON.stringify(r), sourceArg)).filter((r): r is FoodRow => r !== null);
   } else {
-    console.error(`지원하지 않는 형식: ${ext}. .csv/.jsonl/.json만 지원.`);
+    console.error(`지원하지 않는 형식: ${ext}. .csv/.xlsx/.xls/.jsonl/.json만 지원.`);
     process.exit(1);
   }
 
   console.log(`총 ${rows.length}건 파싱 완료. Supabase upsert 시작 (배치 1000)…`);
+  const t0 = Date.now();
 
   const BATCH = 1000;
   let ok = 0;
@@ -156,10 +186,13 @@ async function main(): Promise<void> {
       console.error(`[batch ${i}] 실패:`, error.message);
     } else {
       ok += batch.length;
-      console.log(`[batch ${i + batch.length} / ${rows.length}] 적재 완료`);
+      const done = i + batch.length;
+      const pct = ((done / rows.length) * 100).toFixed(1);
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+      console.log(`[${done} / ${rows.length}] ${pct}% · 경과 ${elapsed}s`);
     }
   }
-  console.log(`완료: ${ok}건 / ${rows.length}건 적재.`);
+  console.log(`완료: ${ok}건 / ${rows.length}건 적재 (${((Date.now() - t0) / 1000).toFixed(1)}s).`);
 }
 
 void main();

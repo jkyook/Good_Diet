@@ -1,5 +1,9 @@
 # 외식 프랜차이즈 메뉴 데이터
 
+> 일반 식품 import는 `scripts/import_foods.ts` 사용 (헤더 주석에 csv/xlsx/jsonl 예시).
+> 예: `npm run import:foods -- ./data/foods/20260429_가공식품_277074건.xlsx mfds_processed`
+
+
 T-069 식품 매칭 시스템 — 외식 프랜차이즈 메뉴 영양정보 수동 입력.
 
 ## 입력 형식
