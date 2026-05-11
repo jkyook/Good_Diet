@@ -907,6 +907,9 @@ export default function App() {
                           <div className="mt-2 flex gap-1.5">
                             <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-black text-orange-600">{meal.mode === 'quick' ? '퀵 분석' : '상세 분석'}</span>
                             {meal.category && <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-500">{meal.category}</span>}
+                            {meal.matchedFoodId && (
+                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700" title="DB 매칭됨">📚</span>
+                            )}
                           </div>
                         </div>
                         <MealCardMenu
@@ -1231,6 +1234,9 @@ export default function App() {
                                         <span className="text-sm">{mealEmoji}</span>
                                         <p className="text-sm font-black truncate max-w-[160px]">{meal.foodName}</p>
                                         <span className={`text-[8px] font-black px-1 border ${meal.mode === 'quick' ? 'border-amber-400 text-amber-600' : 'border-sky-400 text-sky-600'}`}>{meal.mode === 'quick' ? '⚡' : '📋'}</span>
+                                        {meal.matchedFoodId && (
+                                          <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1 rounded-full font-black" title="DB 매칭됨" aria-label="DB 매칭됨">📚</span>
+                                        )}
                                       </div>
                                       <p className="text-[10px] text-slate-400 font-bold mt-0.5">
                                         {new Date(meal.date).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} · {meal.calories} kcal{meal.protein > 0 ? ` · 단백질 ${meal.protein}g` : ''}

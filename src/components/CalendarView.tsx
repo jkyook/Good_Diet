@@ -115,8 +115,11 @@ function DaySheet({
                 >
                   <img src={meal.image} className="w-12 h-12 object-cover shrink-0 border-2 border-slate-200" alt="" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-black truncate">
-                      {MEAL_TYPE_EMOJI[meal.mealType] ?? '🍽️'} {meal.foodName}
+                    <p className="text-sm font-black truncate flex items-center gap-1">
+                      <span>{MEAL_TYPE_EMOJI[meal.mealType] ?? '🍽️'} {meal.foodName}</span>
+                      {meal.matchedFoodId && (
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1 rounded-full font-black shrink-0" title="DB 매칭됨" aria-label="DB 매칭됨">📚</span>
+                      )}
                     </p>
                     <p className="text-[10px] text-slate-400 font-bold mt-0.5">
                       {new Date(meal.date).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
