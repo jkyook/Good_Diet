@@ -142,7 +142,6 @@ export default function App() {
   // --- History & UI ---
   const [history, setHistory] = useState<MealRecord[]>([]);
   const [selectedMeal, setSelectedMeal] = useState<MealRecord | null>(null);
-  const [showProfile, setShowProfile] = useState(false);
   const [activeTab, setActiveTab] = useState<'history' | 'stats'>('history');
 
   // --- Navigation ---
@@ -176,7 +175,6 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const profileRef = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraAutoAnalyzeRef = useRef(false);
 
@@ -222,16 +220,6 @@ export default function App() {
   }, [history]);
 
   // --- Effects ---
-  useEffect(() => {
-    if (!showProfile) return;
-    const handler = (e: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
-        setShowProfile(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showProfile]);
 
   // 세션 복원 + 인증 상태 구독
   useEffect(() => {
@@ -791,78 +779,7 @@ export default function App() {
               >로그인</button>
             )
           )}
-          <div ref={profileRef} className="relative">
-            {/* T-063 (1): 'M30' 텍스트 시각 제거 (계정 정보는 AccountModal로 중복). 칼로리 목표 입력 popover는 보존. */}
-            <button
-              type="button"
-              onClick={() => setShowProfile(p => !p)}
-              aria-label="칼로리 목표 설정 열기"
-              className="w-9 h-9 bg-white border-[3px] border-slate-900 rounded-xl flex items-center justify-center text-slate-900 shadow-[3px_3px_0_0_rgba(15,23,42,1)] hover:bg-orange-50 transition-colors"
-            >
-              <User className="w-4 h-4" aria-hidden="true" />
-            </button>
-            <AnimatePresence>
-              {showProfile && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-1rem)] bg-white border-[3px] border-slate-900 shadow-[8px_8px_0_0_rgba(15,23,42,1)] p-5 z-50"
-                >
-                  <h4 className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest flex items-center gap-2">
-                    <User className="w-3 h-3" /> Profile Settings
-                  </h4>
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase text-slate-500">나이</label>
-                        <input type="number" value={age} min={10} max={100} onChange={e => setAge(Number(e.target.value))}
-                          className="w-full border-[3px] border-slate-900 px-2 py-1.5 font-black text-sm focus:outline-none focus:bg-orange-50 shadow-[2px_2px_0_0_rgba(15,23,42,1)]"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase text-slate-500">체중(kg)</label>
-                        <input type="number" value={weight} min={30} max={200} onChange={e => setWeight(Number(e.target.value))}
-                          className="w-full border-[3px] border-slate-900 px-2 py-1.5 font-black text-sm focus:outline-none focus:bg-orange-50 shadow-[2px_2px_0_0_rgba(15,23,42,1)]"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase text-slate-500">키(cm)</label>
-                      <input type="number" value={height} min={100} max={250} onChange={e => setHeight(Number(e.target.value))}
-                        className="w-full border-[3px] border-slate-900 px-2 py-1.5 font-black text-sm focus:outline-none focus:bg-orange-50 shadow-[2px_2px_0_0_rgba(15,23,42,1)]"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase text-slate-500">성별</label>
-                      <div className="flex border-[3px] border-slate-900 overflow-hidden shadow-[2px_2px_0_0_rgba(15,23,42,1)]">
-                        {(['male', 'female'] as Gender[]).map((g, i) => (
-                          <button key={g} onClick={() => setGender(g)}
-                            className={`flex-1 py-1.5 text-xs font-black uppercase transition-colors ${i > 0 ? 'border-l-[3px] border-slate-900' : ''} ${gender === g ? 'bg-slate-900 text-white' : 'bg-white'}`}
-                          >{g === 'male' ? '남성' : '여성'}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase text-slate-500">활동량</label>
-                      <select value={activityLevel} onChange={e => setActivityLevel(e.target.value as ActivityLevel)}
-                        className="w-full border-[3px] border-slate-900 px-2 py-1.5 font-bold text-xs bg-white shadow-[2px_2px_0_0_rgba(15,23,42,1)] focus:outline-none appearance-none cursor-pointer"
-                      >
-                        {(Object.entries(ACTIVITY_LABELS) as [ActivityLevel, string][]).map(([v, l]) => (
-                          <option key={v} value={v}>{l}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="bg-orange-50 border-[3px] border-orange-400 p-3 shadow-[3px_3px_0_0_rgba(251,146,60,1)]">
-                      <p className="text-[9px] font-black uppercase text-orange-600 mb-1">일일 권장 칼로리</p>
-                      <p className="text-xl font-black">{dailyCalorieTarget.toLocaleString()} <span className="text-xs opacity-50">kcal</span></p>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          {/* T-065: profile popover 통째 제거 — AccountModal에 통합. */}
         </div>
       </header>
 
@@ -1502,19 +1419,38 @@ export default function App() {
       <AccountModal
         open={showAccountModal}
         me={me}
+        profile={{ age, gender, weight, height, activityLevel }}
+        dailyKcalTarget={dailyCalorieTarget}
         onSave={async (patch) => {
-          if (!user) return false;
-          const { error } = await updateAccount(user.id, patch);
-          if (error) {
-            console.error('[updateAccount] failed:', error);
-            showToast(`저장 실패: ${error}`, 'error');
-            // 에러 메시지를 모달 inline에서도 보이도록 throw (모달 내부 catch에서 가시화)
-            throw new Error(error);
+          // T-065: 통합 저장 — age/gender는 supabase update, weight/height/activityLevel은 localStorage(클라 state).
+          if (patch.age !== undefined || patch.gender !== undefined) {
+            if (!user) {
+              // 비로그인은 supabase 동기화 불가하나, age/gender 자체는 클라 state로 보존.
+              if (patch.age !== undefined && patch.age !== null) setAge(patch.age);
+              if (patch.gender !== undefined && patch.gender !== null) setGender(patch.gender);
+            } else {
+              const { error } = await updateAccount(user.id, {
+                age: patch.age,
+                gender: patch.gender,
+              });
+              if (error) {
+                console.error('[updateAccount] failed:', error);
+                showToast(`저장 실패: ${error}`, 'error');
+                throw new Error(error);
+              }
+              setMe(prev => prev ? {
+                ...prev,
+                age: patch.age !== undefined ? patch.age : prev.age,
+                gender: patch.gender !== undefined ? patch.gender : prev.gender,
+              } : prev);
+              if (patch.age !== undefined && patch.age !== null) setAge(patch.age);
+              if (patch.gender !== undefined && patch.gender !== null) setGender(patch.gender);
+            }
           }
-          // me 갱신 + 로컬 칼로리 목표 계산용 age/gender state도 동기화
-          setMe(prev => prev ? { ...prev, age: patch.age ?? prev.age, gender: patch.gender ?? prev.gender } : prev);
-          if (patch.age !== undefined && patch.age !== null) setAge(patch.age);
-          if (patch.gender !== undefined && patch.gender !== null) setGender(patch.gender);
+          // 로컬 profile (localStorage 자동 sync는 useEffect L286)
+          if (patch.weight !== undefined) setWeight(patch.weight);
+          if (patch.height !== undefined) setHeight(patch.height);
+          if (patch.activityLevel !== undefined) setActivityLevel(patch.activityLevel);
           showToast('계정 정보가 업데이트됐어요 ✨');
           return true;
         }}
