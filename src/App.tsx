@@ -145,7 +145,6 @@ export default function App() {
   // --- Navigation ---
   const [mainTab, setMainTab] = useState<'home' | 'analyze' | 'history' | 'stats'>('home');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
-  const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [selectedDateKey, setSelectedDateKey] = useState(() => localDateKey(new Date()));
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
@@ -1212,7 +1211,6 @@ export default function App() {
           {mainTab === 'history' && (
             <motion.div key="history" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }}
               className="p-4 space-y-4"
-              onClick={() => setActiveItemId(null)}
             >
               <CalendarView
                 history={history}
@@ -1226,6 +1224,8 @@ export default function App() {
                 dailyCalorieTarget={dailyCalorieTarget}
                 onDeleteMeal={id => deleteRecord(id)}
                 onClearDay={clearDayRecords}
+                onSelect={(meal) => { setSelectedMeal(meal); setMainTab('analyze'); }}
+                onEdit={(meal) => setEditingMeal(meal)}
               />
 
               <div className="flex justify-between items-center mt-2">
@@ -1274,16 +1274,22 @@ export default function App() {
                             className="overflow-hidden border-t-[2px] border-slate-200"
                           >
                             {meals.map(meal => {
-                              const isActive = activeItemId === meal.id;
                               const mealEmoji = MEAL_TYPES.find(t => t.value === meal.mealType)?.emoji ?? '🍽️';
                               return (
-                                <div key={meal.id}
-                                  className={`flex items-stretch border-b-[1px] border-slate-100 last:border-0 transition-colors ${isActive ? 'bg-orange-50' : 'bg-white'}`}
+                                <div
+                                  key={meal.id}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={(e) => { e.stopPropagation(); setSelectedMeal(meal); setMainTab('analyze'); }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      setSelectedMeal(meal); setMainTab('analyze');
+                                    }
+                                  }}
+                                  className="flex items-center border-b-[1px] border-slate-100 last:border-0 bg-white active:bg-orange-50/50 cursor-pointer"
                                 >
-                                  <button
-                                    onClick={e => { e.stopPropagation(); isActive ? (setSelectedMeal(meal), setMainTab('analyze')) : setActiveItemId(meal.id); }}
-                                    className="flex-1 flex items-center gap-3 px-4 py-3 text-left min-w-0"
-                                  >
+                                  <div className="flex-1 flex items-center gap-3 px-4 py-3 min-w-0">
                                     <img src={meal.image} className="w-12 h-12 object-cover shrink-0 border-2 border-slate-200" alt="" />
                                     <div className="flex-1 min-w-0">
                                       <div className="flex items-center gap-1 flex-wrap">
@@ -1294,23 +1300,14 @@ export default function App() {
                                       <p className="text-[10px] text-slate-400 font-bold mt-0.5">
                                         {new Date(meal.date).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} · {meal.calories} kcal{meal.protein > 0 ? ` · 단백질 ${meal.protein}g` : ''}
                                       </p>
-                                      {isActive && <p className="text-[9px] text-orange-500 font-black uppercase mt-0.5">다시 탭하면 상세 보기 →</p>}
                                     </div>
-                                  </button>
-                                  <AnimatePresence>
-                                    {isActive && (
-                                      <motion.button
-                                        initial={{ width: 0, opacity: 0 }}
-                                        animate={{ width: 60, opacity: 1 }}
-                                        exit={{ width: 0, opacity: 0 }}
-                                        transition={{ duration: 0.2 }}
-                                        onClick={e => { e.stopPropagation(); deleteRecord(meal.id, e); }}
-                                        className="bg-rose-500 text-white flex items-center justify-center shrink-0 overflow-hidden border-l-[2px] border-slate-200"
-                                      >
-                                        <Trash2 className="w-5 h-5" />
-                                      </motion.button>
-                                    )}
-                                  </AnimatePresence>
+                                  </div>
+                                  <div className="pr-2">
+                                    <MealCardMenu
+                                      onEdit={() => setEditingMeal(meal)}
+                                      onDelete={() => deleteRecord(meal.id)}
+                                    />
+                                  </div>
                                 </div>
                               );
                             })}
@@ -1414,7 +1411,7 @@ export default function App() {
 
       <BottomTabBar
         activeTab={mainTab}
-        onChange={(tab) => { setMainTab(tab); setActiveItemId(null); }}
+        onChange={(tab) => setMainTab(tab)}
       />
 
       <AnimatePresence>

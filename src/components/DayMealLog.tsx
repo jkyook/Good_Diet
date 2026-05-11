@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Trash2, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import { ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 import { MealType } from '../services/geminiService';
 import type { MealRecord } from '../types';
+import MealCardMenu from './meal/MealCardMenu';
 
 const MEAL_LABELS: Record<MealType, { emoji: string; label: string }> = {
   breakfast: { emoji: '🌅', label: '아침' },
@@ -18,6 +19,8 @@ interface Props {
   dailyCalorieTarget?: number;
   onDeleteMeal: (id: string) => void;
   onClearDay: (date: string) => void;
+  onSelect?: (record: MealRecord) => void;
+  onEdit?: (record: MealRecord) => void;
 }
 
 interface DaySummary {
@@ -58,7 +61,7 @@ function buildSummary(records: MealRecord[], targetDate: string): DaySummary {
   return { date: targetDate, totalCalories, totalProtein, totalCarbs, totalFat, mealCount: meals.length, byType };
 }
 
-export default function DayMealLog({ date, records, dailyCalorieTarget = 2000, onDeleteMeal, onClearDay }: Props) {
+export default function DayMealLog({ date, records, dailyCalorieTarget = 2000, onDeleteMeal, onClearDay, onSelect, onEdit }: Props) {
   const today = dateKey(new Date());
   const targetDate = date ?? today;
 
@@ -162,7 +165,13 @@ export default function DayMealLog({ date, records, dailyCalorieTarget = 2000, o
             {isOpen && (
               <div className="border-t border-gray-50">
                 {records.map(record => (
-                  <MealRow key={record.id} record={record} onDelete={() => handleDelete(record.id)} />
+                  <MealRow
+                    key={record.id}
+                    record={record}
+                    onSelect={onSelect ? () => onSelect(record) : undefined}
+                    onEdit={onEdit ? () => onEdit(record) : undefined}
+                    onDelete={() => handleDelete(record.id)}
+                  />
                 ))}
               </div>
             )}
@@ -180,9 +189,27 @@ export default function DayMealLog({ date, records, dailyCalorieTarget = 2000, o
   );
 }
 
-function MealRow({ record, onDelete }: { record: MealRecord; onDelete: () => void }) {
+function MealRow({
+  record, onSelect, onEdit, onDelete,
+}: {
+  record: MealRecord;
+  onSelect?: () => void;
+  onEdit?: () => void;
+  onDelete: () => void;
+}) {
+  const handleActivate = () => {
+    if (onSelect) onSelect();
+  };
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-0">
+    <div
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onClick={onSelect ? handleActivate : undefined}
+      onKeyDown={onSelect ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleActivate(); }
+      } : undefined}
+      className={`flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-0 ${onSelect ? 'cursor-pointer active:bg-orange-50/40' : ''}`}
+    >
       <img
         src={record.image}
         className="w-12 h-12 object-cover rounded-xl flex-shrink-0"
@@ -202,12 +229,10 @@ function MealRow({ record, onDelete }: { record: MealRecord; onDelete: () => voi
           )}
         </div>
       </div>
-      <button
-        onClick={onDelete}
-        className="p-2 text-gray-300 hover:text-red-400 transition-colors flex-shrink-0"
-      >
-        <Trash2 size={15} />
-      </button>
+      <MealCardMenu
+        onEdit={() => onEdit?.()}
+        onDelete={onDelete}
+      />
     </div>
   );
 }
