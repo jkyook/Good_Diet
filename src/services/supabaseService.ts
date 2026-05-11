@@ -210,6 +210,28 @@ export async function loadHistory(userId: string): Promise<MealRecord[]> {
   return data.map(fromRow);
 }
 
+// 식사 분류 편집 — mealType / date만 (RLS + GRANT로 컬럼 화이트리스트 보호).
+// 다른 컬럼은 patch에 넣어도 무시됨.
+export async function updateMealClassification(
+  mealId: string,
+  patch: { mealType?: MealType; date?: string },
+): Promise<{ error: string | null }> {
+  if (!supabase) return { error: 'Supabase가 설정되지 않았습니다.' };
+
+  const row: Record<string, unknown> = {};
+  if (patch.mealType !== undefined) row.meal_type = patch.mealType;
+  if (patch.date !== undefined) row.analyzed_at = patch.date;
+
+  if (Object.keys(row).length === 0) return { error: null };
+
+  const { error } = await supabase
+    .from('meal_history')
+    .update(row)
+    .eq('id', mealId);
+
+  return { error: error ? error.message : null };
+}
+
 export async function deleteMeal(
   mealId: string,
 ): Promise<{ error: string | null }> {
