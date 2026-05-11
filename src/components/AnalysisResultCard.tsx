@@ -307,7 +307,7 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
         onClick={onBack}
         className="w-full bg-gray-900 text-white py-4 rounded-2xl text-sm font-bold active:scale-95 transition-transform"
       >
-        ← 분석 화면으로
+        ← 뒤로가기
       </button>
     </div>
   );
