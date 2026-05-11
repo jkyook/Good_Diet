@@ -43,6 +43,7 @@ import CalChargeModal from './components/cal/CalChargeModal';
 import AdRewardModal from './components/cal/AdRewardModal';
 import MealCardMenu from './components/meal/MealCardMenu';
 import MealEditModal from './components/meal/MealEditModal';
+import MealPreviewModal from './components/meal/MealPreviewModal';
 import AnalyzeModeTabs from './components/analyze/AnalyzeModeTabs';
 import ExerciseRecommendCard from './components/recommend/ExerciseRecommendCard';
 import SnackRecommendCard from './components/recommend/SnackRecommendCard';
@@ -154,6 +155,7 @@ export default function App() {
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [showAdModal, setShowAdModal] = useState(false);
   const [editingMeal, setEditingMeal] = useState<MealRecord | null>(null);
+  const [previewingMeal, setPreviewingMeal] = useState<MealRecord | null>(null);
   const [analyzeMode, setAnalyzeMode] = useState<'single' | 'batch'>('single');
 
   // --- Overlays ---
@@ -949,11 +951,11 @@ export default function App() {
                         key={meal.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => { setSelectedMeal(meal); setMainTab('analyze'); }}
+                        onClick={() => setPreviewingMeal(meal)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            setSelectedMeal(meal); setMainTab('analyze');
+                            setPreviewingMeal(meal);
                           }
                         }}
                         className="w-full bg-white rounded-[22px] border border-orange-100 p-3 flex items-center gap-3 text-left shadow-sm active:scale-[0.99] transition-transform cursor-pointer"
@@ -1216,7 +1218,7 @@ export default function App() {
               <CalendarView
                 history={history}
                 dailyTarget={dailyCalorieTarget}
-                onMealClick={(meal) => { setSelectedMeal(meal); setMainTab('analyze'); }}
+                onMealClick={(meal) => setPreviewingMeal(meal)}
               />
 
               {/* 오늘 식단 요약 */}
@@ -1225,7 +1227,7 @@ export default function App() {
                 dailyCalorieTarget={dailyCalorieTarget}
                 onDeleteMeal={id => deleteRecord(id)}
                 onClearDay={clearDayRecords}
-                onSelect={(meal) => { setSelectedMeal(meal); setMainTab('analyze'); }}
+                onSelect={(meal) => setPreviewingMeal(meal)}
                 onEdit={(meal) => setEditingMeal(meal)}
               />
 
@@ -1281,11 +1283,11 @@ export default function App() {
                                   key={meal.id}
                                   role="button"
                                   tabIndex={0}
-                                  onClick={(e) => { e.stopPropagation(); setSelectedMeal(meal); setMainTab('analyze'); }}
+                                  onClick={(e) => { e.stopPropagation(); setPreviewingMeal(meal); }}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter' || e.key === ' ') {
                                       e.preventDefault();
-                                      setSelectedMeal(meal); setMainTab('analyze');
+                                      setPreviewingMeal(meal);
                                     }
                                   }}
                                   className="flex items-center border-b-[1px] border-slate-100 last:border-0 bg-white active:bg-orange-50/50 cursor-pointer"
@@ -1461,6 +1463,14 @@ export default function App() {
         onClose={() => setEditingMeal(null)}
       />
 
+      <MealPreviewModal
+        open={!!previewingMeal}
+        meal={previewingMeal}
+        dailyCalorieTarget={dailyCalorieTarget}
+        dailyCalorieConsumed={previewingMeal ? getDailyStats(previewingMeal.date).calories : 0}
+        onClose={() => setPreviewingMeal(null)}
+      />
+
       <AdRewardModal
         open={showAdModal}
         onComplete={async () => {
@@ -1511,9 +1521,8 @@ export default function App() {
                 history={history}
                 dailyTarget={dailyCalorieTarget}
                 onMealClick={(meal) => {
-                  setSelectedMeal(meal);
-                  setMainTab('analyze');
                   setShowCalendarModal(false);
+                  setPreviewingMeal(meal);
                 }}
               />
             </motion.div>
