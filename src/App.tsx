@@ -19,6 +19,7 @@ import {
 } from './services/geminiService';
 import { fetchMe, chargeAd, initPayment, type MeResponse } from './services/calService';
 import { FREE_DAILY_LIMIT, type CalPackageId } from './config/packages';
+import { inferMealTypeByTime } from './utils/mealTime';
 import {
   signIn, signUp, signOut, getSession, onAuthChange,
   saveMeal, loadHistory, deleteMeal as dbDeleteMeal, clearHistory as dbClearHistory,
@@ -115,8 +116,8 @@ export default function App() {
   const [images, setImages] = useState<{ id: string; url: string; file: File }[]>([]);
   const [loading, setLoading] = useState(false);
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('quick');
-  const [mealType, setMealType] = useState<MealType>('lunch');
-  const [provider, setProvider] = useState<AIProvider>('claude');
+  const [mealType, setMealType] = useState<MealType>(() => inferMealTypeByTime());
+  const [provider, setProvider] = useState<AIProvider>('groq');
   const [health, setHealth] = useState<ProviderHealth>({ gemini: false, claude: false, groq: false });
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -237,7 +238,7 @@ export default function App() {
       .then(h => {
         setHealth(h);
         // 기본 프로바이더 자동 선택: 사용 가능한 첫 번째
-        setProvider(prev => h[prev] ? prev : (h.claude ? 'claude' : h.gemini ? 'gemini' : h.groq ? 'groq' : prev));
+        setProvider(prev => h[prev] ? prev : (h.groq ? 'groq' : h.claude ? 'claude' : h.gemini ? 'gemini' : prev));
       })
       .catch(err => console.error('[health] 서버 가용성 조회 실패:', err));
   }, []);
@@ -412,6 +413,7 @@ export default function App() {
     cameraAutoAnalyzeRef.current = true;
     setSelectedMeal(null);
     setMainTab('analyze');
+    setMealType(inferMealTypeByTime()); // 카메라 진입 시점의 시간으로 자동 추천 (사용자 수동 변경 가능)
     cameraInputRef.current?.click();
   };
 
