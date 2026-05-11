@@ -468,7 +468,16 @@ export default function App() {
         // T-058: analysis.provider 변경 사실은 사용자에게 노출하지 않음.
         // T-068: N인분이면 영양/양 필드를 1인분 기준으로 환산해서 DB에 저장. portion_count는 원본 N 보존.
         const perPortion = divideByPortion(analysis, portionCount);
-        results.push({ ...perPortion, id: img.id, image: base64, mealType, portionCount });
+        // T-072: dbMatch가 있으면 matched_food_id/similarity를 record에 첨부 → supabase 영속.
+        results.push({
+          ...perPortion,
+          id: img.id,
+          image: base64,
+          mealType,
+          portionCount,
+          matchedFoodId: analysis.dbMatch?.food_id ?? null,
+          matchSimilarity: analysis.dbMatch?.similarity ?? null,
+        });
       }
 
       setHistory(prev => [...results, ...prev]);

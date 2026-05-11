@@ -38,7 +38,14 @@ const CONFIDENCE_STYLE: Record<string, string> = {
 };
 
 interface Props {
-  meal: AnalysisResult & { id: string; image: string; mealType: MealType; portionCount?: number };
+  meal: AnalysisResult & {
+    id: string;
+    image: string;
+    mealType: MealType;
+    portionCount?: number;
+    matchedFoodId?: string | null;
+    matchSimilarity?: number | null;
+  };
   dailyCalorieTarget: number;
   dailyCalorieConsumed: number;
   onBack: () => void;
@@ -109,14 +116,27 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
                 🍽 1인분 기준 (원본 {meal.portionCount === 4 ? '4+' : meal.portionCount}인분)
               </span>
             )}
-            {meal.dbMatch && (
-              <span
-                className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-black"
-                title={`'${meal.dbMatch.name}' 와 일치 (${Math.round(meal.dbMatch.similarity * 100)}%${meal.dbMatch.brand ? ` · ${meal.dbMatch.brand}` : ''})`}
-              >
-                📚 DB 매칭
-              </span>
-            )}
+            {/* T-072: 분석 직후엔 dbMatch (이름/brand 포함), 영속 복원은 matchedFoodId(+ similarity)만. 둘 중 하나라도 있으면 배지 노출. */}
+            {(meal.dbMatch || meal.matchedFoodId) && (() => {
+              const sim = meal.dbMatch?.similarity ?? meal.matchSimilarity ?? null;
+              const name = meal.dbMatch?.name;
+              const brand = meal.dbMatch?.brand;
+              const titleParts: string[] = [];
+              if (name) titleParts.push(`'${name}' 와 일치`);
+              if (sim !== null) titleParts.push(`${Math.round(sim * 100)}%`);
+              if (brand) titleParts.push(brand);
+              const title = titleParts.length > 0
+                ? titleParts.join(' · ')
+                : 'DB 식품과 매칭됨';
+              return (
+                <span
+                  className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-black"
+                  title={title}
+                >
+                  📚 DB 매칭
+                </span>
+              );
+            })()}
             {meal.detectedFoods?.map(f => (
               <span key={f} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{f}</span>
             ))}
