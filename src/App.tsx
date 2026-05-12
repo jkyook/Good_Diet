@@ -482,7 +482,15 @@ export default function App() {
 
       setHistory(prev => [...results, ...prev]);
       if (user) {
-        for (const r of results) await saveMeal(r, user.id);
+        const failed: string[] = [];
+        for (const r of results) {
+          const { error } = await saveMeal(r, user.id);
+          if (error) failed.push(error);
+        }
+        if (failed.length > 0) {
+          console.error('saveMeal 실패:', failed);
+          showToast(`기록 저장 실패 (${failed.length}건) — 새로고침 시 사라질 수 있습니다`);
+        }
       }
       setImages(prev => {
         const usedIds = new Set(sourceImages.map(img => img.id));
@@ -1029,7 +1037,13 @@ export default function App() {
                         });
                         setHistory(prev => [...records, ...prev]);
                         if (user) {
-                          void Promise.all(records.map(r => saveMeal(r, user.id)));
+                          void Promise.all(records.map(r => saveMeal(r, user.id))).then(rs => {
+                            const failed = rs.filter(r => r.error);
+                            if (failed.length > 0) {
+                              console.error('saveMeal 실패:', failed.map(f => f.error));
+                              showToast(`기록 저장 실패 (${failed.length}건) — 새로고침 시 사라질 수 있습니다`);
+                            }
+                          });
                         }
                         if (records[0]) setSelectedMeal(records[0]);
                         showToast(`${records.length}개 일괄 분석 완료!`);
