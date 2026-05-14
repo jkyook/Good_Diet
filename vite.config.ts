@@ -28,5 +28,15 @@ export default defineConfig(({mode}) => {
         },
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            react: ['react', 'react-dom', 'motion/react'],
+            icons: ['lucide-react'],
+          },
+        },
+      },
+    },
   };
 });

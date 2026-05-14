@@ -8,6 +8,7 @@ import { checkRateLimit } from './_lib/rateLimit.js';
 import { handlePreflight } from './_lib/cors.js';
 import { validateImage } from './_lib/validate.js';
 import { verifyJwt, getServiceClient, isServiceAvailable } from './_lib/auth.js';
+import { applyFoodDbMatch } from './_lib/foodMatch.js';
 
 interface QuotaResult {
   ok: boolean;
@@ -121,6 +122,9 @@ export default async function handler(req: ApiReq, res: ApiRes) {
 
   if (ordered.length === 0) {
     send(res, { type: 'error', message: '사용 가능한 AI 프로바이더가 없습니다 (서버 키 누락).' });
+    if (supabaseForRefund && refundUserId) {
+      await supabaseForRefund.rpc('refund_analysis_quota', { p_user_id: refundUserId, p_reason: 'batch_no_provider' });
+    }
     res.end();
     return;
   }
@@ -136,7 +140,13 @@ export default async function handler(req: ApiReq, res: ApiRes) {
       try {
         const text = await callProvider(cur, base64Data, prompt, mode);
         const result = parseResult(text, mode, cur);
-        send(res, { type: 'item', index: i, result });
+        const { result: finalResult, dbMatch } = await applyFoodDbMatch(result, {
+          userId,
+          provider: cur,
+          mode,
+          logPrefix: 'analyze-batch',
+        });
+        send(res, { type: 'item', index: i, result: finalResult, dbMatch });
         resolved = true;
         anySuccess = true;
         break;

@@ -1,5 +1,5 @@
 // POST /api/cal/charge/ad — 광고 시청 보상 (+1 cal)
-// 실 AdMob SSV 검증은 후속 티켓(T-048). 본 구현은 ssv_token UNIQUE 중복 방지 + 모바일 SDK 자리.
+// 실 AdMob SSV 검증 전까지는 기본 차단. 로컬/QA에서만 ALLOW_UNVERIFIED_AD_REWARD=true 로 임시 허용.
 import type { ApiReq, ApiRes } from '../../_lib/types.js';
 import { handlePreflight } from '../../_lib/cors.js';
 import { verifyJwt, getServiceClient, isServiceAvailable } from '../../_lib/auth.js';
@@ -57,8 +57,15 @@ export default async function handler(req: ApiReq, res: ApiRes) {
     return;
   }
 
-  // TODO(T-048): AdMob SSV 토큰 Google 공개키 서명 검증.
-  // 본 단계는 ssv_token UNIQUE로 중복 보상만 차단.
+  const allowUnverifiedReward = process.env.ALLOW_UNVERIFIED_AD_REWARD === 'true';
+  if (!allowUnverifiedReward) {
+    res.statusCode = 501;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'ad_ssv_verification_required' }));
+    return;
+  }
+
+  // TODO(T-048): AdMob SSV 토큰 Google 공개키 서명 검증. 아래 경로는 로컬/QA 임시 허용 전용.
   const supabase = getServiceClient();
   const insertAdView = await supabase.from('ad_views').insert({
     user_id: auth.userId,

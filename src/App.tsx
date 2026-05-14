@@ -17,7 +17,7 @@ import {
   AIProvider, PROVIDER_LABELS, fetchHealth, ProviderHealth,
   InsufficientCalError,
 } from './services/geminiService';
-import { fetchMe, chargeAd, initPayment, type MeResponse } from './services/calService';
+import { fetchMe, initPayment, type MeResponse } from './services/calService';
 import { updateAccount } from './services/supabaseService';
 import { type CalPackageId } from './config/packages';
 import { inferMealTypeByTime } from './utils/mealTime';
@@ -42,7 +42,6 @@ import HomeSwipeArea from './components/HomeSwipeArea';
 import CalBalance from './components/cal/CalBalance';
 import CalLimitModal from './components/cal/CalLimitModal';
 import CalChargeModal from './components/cal/CalChargeModal';
-import AdRewardModal from './components/cal/AdRewardModal';
 import AccountModal from './components/cal/AccountModal';
 import MealCardMenu from './components/meal/MealCardMenu';
 import MealEditModal from './components/meal/MealEditModal';
@@ -158,7 +157,6 @@ export default function App() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [showChargeModal, setShowChargeModal] = useState(false);
-  const [showAdModal, setShowAdModal] = useState(false);
   const [editingMeal, setEditingMeal] = useState<MealRecord | null>(null);
   const [previewingMeal, setPreviewingMeal] = useState<MealRecord | null>(null);
   const [analyzeMode, setAnalyzeMode] = useState<'single' | 'batch'>('single');
@@ -267,7 +265,7 @@ export default function App() {
   useEffect(() => {
     if (user) {
       loadHistory(user.id).then(records => {
-        if (records.length > 0) setHistory(records);
+        setHistory(records);
       });
     } else {
       const saved = localStorage.getItem('mealwise_history');
@@ -1033,6 +1031,8 @@ export default function App() {
                             image,
                             mealType,
                             portionCount,
+                            matchedFoodId: result.dbMatch?.food_id ?? null,
+                            matchSimilarity: result.dbMatch?.similarity ?? null,
                           };
                         });
                         setHistory(prev => [...records, ...prev]);
@@ -1382,8 +1382,8 @@ export default function App() {
         open={showLimitModal}
         calBalance={me?.cal_balance ?? 0}
         nextRechargeAt={me?.daily_usage_reset_at ?? null}
-        adAvailable={true}
-        onWatchAd={() => { setShowLimitModal(false); setShowAdModal(true); }}
+        adAvailable={false}
+        onWatchAd={() => {}}
         onCharge={() => { setShowLimitModal(false); setShowChargeModal(true); }}
         onClose={() => setShowLimitModal(false)}
       />
@@ -1464,24 +1464,6 @@ export default function App() {
         }}
         onLogout={() => { void handleLogout(); }}
         onClose={() => setShowAccountModal(false)}
-      />
-
-      <AdRewardModal
-        open={showAdModal}
-        onComplete={async () => {
-          try {
-            // 실 AdMob SDK SSV 토큰은 T-048 후속. dummy 토큰으로 보상 호출.
-            const dummySsv = `dummy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-            const r = await chargeAd(dummySsv);
-            setMe(prev => prev ? { ...prev, cal_balance: r.cal_balance } : prev);
-            showToast('🎉 🌰 +1 cal 도착');
-            setShowAdModal(false);
-          } catch (e) {
-            showToast(e instanceof Error ? e.message : '광고 보상 실패', 'error');
-          }
-        }}
-        onClose={() => setShowAdModal(false)}
-        isNativeSdkAvailable={false}
       />
 
       <AnimatePresence>
