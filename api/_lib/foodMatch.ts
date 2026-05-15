@@ -67,16 +67,19 @@ export async function applyFoodDbMatch(
       similarity: top.similarity,
       matched_via: top.matched_via,
     };
+    const preserveLabelNutrition =
+      result.analysisSource === 'nutrition_label' ||
+      result.analysisSource === 'package_label';
     return {
       dbMatch,
       result: {
         ...result,
         dbMatch,
-        calories: top.calories ?? result.calories,
-        protein: top.protein ?? result.protein,
-        carbs: top.carbs ?? result.carbs,
-        fat: top.fat ?? result.fat,
-        weightGrams: top.serving_grams ?? result.weightGrams,
+        calories: preserveLabelNutrition ? result.calories : top.calories ?? result.calories,
+        protein: preserveLabelNutrition ? result.protein : top.protein ?? result.protein,
+        carbs: preserveLabelNutrition ? result.carbs : top.carbs ?? result.carbs,
+        fat: preserveLabelNutrition ? result.fat : top.fat ?? result.fat,
+        weightGrams: preserveLabelNutrition ? result.weightGrams : top.serving_grams ?? result.weightGrams,
       },
     };
   } catch (e) {

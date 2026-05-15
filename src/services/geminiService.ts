@@ -117,6 +117,7 @@ export interface AnalysisResult {
   mealScore?: MealScore;
   improvements?: string[];
   warnings?: string[];
+  analysisSource?: 'visual_estimate' | 'package_label' | 'nutrition_label';
   confidence?: '높음' | '중간' | '낮음';
   recommendations?: Recommendations;
   /** T-069: DB 식품 매칭 결과 (similarity > 0.7 시에만 포함). 영양정보는 이미 result.* 에 반영됨. */

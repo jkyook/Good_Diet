@@ -72,6 +72,7 @@ export interface AnalysisResult {
   mealScore?: MealScore;
   improvements?: string[];
   warnings?: string[];
+  analysisSource?: 'visual_estimate' | 'package_label' | 'nutrition_label';
   confidence?: '높음' | '중간' | '낮음';
 }
 
@@ -174,9 +175,13 @@ ${data.ingredients.map(i =>
   const warningsSection = data.warnings?.length
     ? `\n## ⚠️ 주의사항\n${data.warnings.map(w => `- ${w}`).join('\n')}`
     : '';
+  const sourceSection = data.analysisSource && data.analysisSource !== 'visual_estimate'
+    ? `\n> 분석 기준: ${data.analysisSource === 'nutrition_label' ? '영양성분표/포장 라벨' : '포장지 상품 정보'}`
+    : '';
 
   return `# ${data.foodName}
 ${foods}
+${sourceSection}
 
 ## 영양 정보
 - 카테고리: **${data.category}** | 조리법: ${data.cookingMethod} | 소스: ${data.sauce}
@@ -270,8 +275,16 @@ export function parseResult(jsonText: string, mode: AnalysisMode, provider: AIPr
     } : undefined,
     improvements: Array.isArray(raw.improvements) ? raw.improvements as string[] : undefined,
     warnings: Array.isArray(raw.warnings) ? raw.warnings as string[] : undefined,
+    analysisSource: parseAnalysisSource(raw.analysisSource),
     confidence: raw.confidence as '높음' | '중간' | '낮음' | undefined,
   };
   result.markdown = buildMarkdown(result);
   return result;
+}
+
+function parseAnalysisSource(value: unknown): AnalysisResult['analysisSource'] {
+  if (value === 'nutrition_label' || value === 'package_label' || value === 'visual_estimate') {
+    return value;
+  }
+  return undefined;
 }
