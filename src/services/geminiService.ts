@@ -93,9 +93,25 @@ export interface FoodCandidate {
   confidence: number;
 }
 
+export interface ExternalNutritionCandidate {
+  provider: string;
+  externalId: string;
+  sourceUrl: string;
+  name: string;
+  brand: string | null;
+  score: number;
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  servingGrams: number | null;
+  basis: 'serving' | '100g';
+}
+
 export interface AnalysisResult {
   date: string;
   foodName: string;
+  barcode?: string;
   category: FoodCategory;
   cookingMethod: string;
   sauce: string;
@@ -109,6 +125,7 @@ export interface AnalysisResult {
   mode: AnalysisMode;
   provider: AIProvider;
   candidates?: FoodCandidate[];
+  externalCandidates?: ExternalNutritionCandidate[];
   isAmbiguous: boolean;
   detectedFoods?: string[];
   ingredients?: IngredientDetail[];

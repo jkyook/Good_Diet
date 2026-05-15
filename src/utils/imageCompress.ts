@@ -7,8 +7,8 @@ export interface CompressOptions {
   quality?: number;    // JPEG 품질 0~1
 }
 
-const DEFAULT_MAX_DIM = 1280;
-const DEFAULT_QUALITY = 0.7;
+const DEFAULT_MAX_DIM = 1600;
+const DEFAULT_QUALITY = 0.82;
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {

@@ -48,9 +48,25 @@ export interface FoodCandidate {
   confidence: number;
 }
 
+export interface ExternalNutritionCandidate {
+  provider: string;
+  externalId: string;
+  sourceUrl: string;
+  name: string;
+  brand: string | null;
+  score: number;
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  servingGrams: number | null;
+  basis: 'serving' | '100g';
+}
+
 export interface AnalysisResult {
   date: string;
   foodName: string;
+  barcode?: string;
   category: FoodCategory;
   cookingMethod: string;
   sauce: string;
@@ -64,6 +80,7 @@ export interface AnalysisResult {
   mode: AnalysisMode;
   provider: AIProvider;
   candidates?: FoodCandidate[];
+  externalCandidates?: ExternalNutritionCandidate[];
   isAmbiguous: boolean;
   detectedFoods?: string[];
   ingredients?: IngredientDetail[];
@@ -254,6 +271,7 @@ export function parseResult(jsonText: string, mode: AnalysisMode, provider: AIPr
     provider,
     isAmbiguous: false,
     detectedFoods: Array.isArray(raw.detectedFoods) ? raw.detectedFoods as string[] : undefined,
+    barcode: parseBarcode(raw.barcode),
     ingredients: Array.isArray(raw.ingredients) ? raw.ingredients as IngredientDetail[] : undefined,
     portionEstimate: portionRaw ? {
       method: portionRaw.method as string ?? '',
@@ -280,6 +298,13 @@ export function parseResult(jsonText: string, mode: AnalysisMode, provider: AIPr
   };
   result.markdown = buildMarkdown(result);
   return result;
+}
+
+function parseBarcode(value: unknown): string | undefined {
+  const digits = typeof value === 'string' || typeof value === 'number'
+    ? String(value).replace(/\D/g, '')
+    : '';
+  return digits.length >= 8 && digits.length <= 14 ? digits : undefined;
 }
 
 function parseAnalysisSource(value: unknown): AnalysisResult['analysisSource'] {

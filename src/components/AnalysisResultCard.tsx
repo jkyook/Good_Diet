@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { AlertTriangle, ChevronDown, ChevronUp, Lightbulb, Star } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, ExternalLink, Lightbulb, Star } from 'lucide-react';
 import { AnalysisResult, MealType } from '../services/geminiService';
 import { reportMatchCorrection } from '../services/supabaseService';
 import MatchCorrectionModal, { type CorrectionReason } from './meal/MatchCorrectionModal';
@@ -306,6 +306,29 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
                   <AlertTriangle size={13} className="text-red-400 mt-0.5 flex-shrink-0" />
                   <p className="text-xs text-red-600">{w}</p>
                 </div>
+              ))}
+            </div>
+          )}
+
+          {meal.externalCandidates && meal.externalCandidates.length > 0 && (
+            <div className="space-y-1.5 rounded-xl bg-slate-50 border border-slate-100 p-3">
+              <p className="text-xs font-black text-slate-700">외부 후보</p>
+              {meal.externalCandidates.slice(0, 3).map(c => (
+                <a
+                  key={`${c.provider}-${c.externalId}`}
+                  href={c.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-start justify-between gap-2 text-xs text-slate-600 hover:text-slate-900"
+                >
+                  <span className="min-w-0">
+                    <span className="font-bold">{c.brand ? `${c.brand} ` : ''}{c.name}</span>
+                    <span className="block text-slate-500">
+                      {Math.round(c.score * 100)}% · {c.calories ?? '-'} kcal{c.basis === '100g' ? '/100g' : ''}
+                    </span>
+                  </span>
+                  <ExternalLink size={13} className="mt-0.5 flex-shrink-0" />
+                </a>
               ))}
             </div>
           )}

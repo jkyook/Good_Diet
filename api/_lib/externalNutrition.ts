@@ -33,7 +33,13 @@ interface OpenFoodFactsSearchResponse {
   products?: OpenFoodFactsProduct[];
 }
 
+interface OpenFoodFactsProductResponse {
+  status?: number;
+  product?: OpenFoodFactsProduct;
+}
+
 const OFF_SEARCH_URL = 'https://world.openfoodfacts.org/cgi/search.pl';
+const OFF_PRODUCT_URL = 'https://world.openfoodfacts.org/api/v2/product';
 const USER_AGENT = 'GoodDietFlavorGuard/1.0 (https://good-diet.vercel.app)';
 const MIN_EXTERNAL_SCORE = 0.82;
 
@@ -71,6 +77,32 @@ export async function resolveExternalNutrition(query: string): Promise<ExternalN
 
   const best = candidates[0] ?? null;
   return best && best.score >= MIN_EXTERNAL_SCORE ? best : null;
+}
+
+export async function resolveExternalNutritionByBarcode(barcode: string): Promise<ExternalNutritionMatch | null> {
+  const code = barcode.replace(/\D/g, '');
+  if (code.length < 8 || code.length > 14) return null;
+
+  const url = new URL(`${OFF_PRODUCT_URL}/${encodeURIComponent(code)}.json`);
+  url.searchParams.set('fields', [
+    'code',
+    'product_name',
+    'product_name_en',
+    'product_name_ko',
+    'brands',
+    'quantity',
+    'serving_size',
+    'serving_quantity',
+    'nutrition_data_per',
+    'nutriments',
+  ].join(','));
+
+  const res = await fetchWithRetry(url);
+  if (!res.ok) return null;
+
+  const data = await res.json() as OpenFoodFactsProductResponse;
+  if (data.status === 0 || !data.product) return null;
+  return toExternalMatch('', data.product, 1);
 }
 
 async function fetchWithRetry(url: URL, attempts = 2): Promise<Response> {
@@ -121,7 +153,7 @@ export async function searchExternalNutritionCandidates(query: string, pageSize 
     .sort((a, b) => b.score - a.score);
 }
 
-function toExternalMatch(query: string, product: OpenFoodFactsProduct): ExternalNutritionMatch | null {
+function toExternalMatch(query: string, product: OpenFoodFactsProduct, scoreOverride?: number): ExternalNutritionMatch | null {
   const name = pickProductName(product);
   const code = product.code;
   if (!name || !code) return null;
@@ -136,7 +168,7 @@ function toExternalMatch(query: string, product: OpenFoodFactsProduct): External
   if (calories == null && protein == null && carbs == null && fat == null) return null;
 
   const brand = firstBrand(product.brands);
-  const score = scoreProduct(query, name, brand);
+  const score = scoreOverride ?? scoreProduct(query, name, brand);
   return {
     provider: 'openfoodfacts',
     externalId: code,

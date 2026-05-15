@@ -2,7 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient, isServiceAvailable } from './auth.js';
 import type { AIProvider, AnalysisMode } from './types.js';
 import type { AnalysisResult } from './parse.js';
-import { resolveExternalNutrition, type ExternalNutritionMatch } from './externalNutrition.js';
+import {
+  resolveExternalNutritionByBarcode,
+  searchExternalNutritionCandidates,
+  type ExternalNutritionMatch,
+} from './externalNutrition.js';
 
 export interface DbMatch {
   food_id: string;
@@ -36,7 +40,8 @@ interface ApplyFoodDbMatchOptions {
   logPrefix: string;
 }
 
-const AUTO_MATCH_THRESHOLD = 0.7;
+const AUTO_MATCH_THRESHOLD = 0.78;
+const EXTERNAL_CANDIDATE_LIMIT = 3;
 
 export async function applyFoodDbMatch(
   result: AnalysisResult,
@@ -55,11 +60,13 @@ export async function applyFoodDbMatch(
       ? matches[0] as TopFoodMatch
       : null;
 
+    const barcodeResult = await tryBarcodeNutrition(result, opts);
+    if (barcodeResult) return barcodeResult;
+
     if (!top || top.similarity <= AUTO_MATCH_THRESHOLD) {
-      const external = await tryExternalNutrition(result, opts);
-      if (external) return external;
+      const resultWithCandidates = await attachExternalCandidates(result, opts);
       await logFoodMatchMiss(supabase, result.foodName, top, opts);
-      return { result };
+      return { result: resultWithCandidates };
     }
 
     const dbMatch: DbMatch = {
@@ -91,16 +98,16 @@ export async function applyFoodDbMatch(
   }
 }
 
-async function tryExternalNutrition(
+async function tryBarcodeNutrition(
   result: AnalysisResult,
   opts: ApplyFoodDbMatchOptions,
 ): Promise<{ result: AnalysisResultWithDbMatch } | null> {
-  if (result.analysisSource === 'nutrition_label' || result.analysisSource === 'package_label') {
+  if (result.analysisSource === 'nutrition_label' || !result.barcode) {
     return null;
   }
 
   try {
-    const external = await resolveExternalNutrition(result.foodName);
+    const external = await resolveExternalNutritionByBarcode(result.barcode);
     if (!external) return null;
     await logExternalNutritionSource(result.foodName, external, opts);
     return {
@@ -122,13 +129,51 @@ async function tryExternalNutrition(
         },
         warnings: [
           ...(result.warnings ?? []),
-          `외부 공개 데이터(${external.provider}) 기준으로 보정했습니다.`,
+          `바코드 ${result.barcode} 조회 결과(${external.provider}) 기준으로 보정했습니다.`,
         ],
       },
     };
   } catch (e) {
-    console.warn(`[${opts.logPrefix}] external nutrition skipped:`, e instanceof Error ? e.message : String(e));
+    console.warn(`[${opts.logPrefix}] barcode nutrition skipped:`, e instanceof Error ? e.message : String(e));
     return null;
+  }
+}
+
+async function attachExternalCandidates(
+  result: AnalysisResult,
+  opts: ApplyFoodDbMatchOptions,
+): Promise<AnalysisResultWithDbMatch> {
+  if (result.analysisSource === 'nutrition_label' || result.analysisSource === 'package_label') {
+    return result;
+  }
+
+  try {
+    const candidates = await searchExternalNutritionCandidates(result.foodName, EXTERNAL_CANDIDATE_LIMIT);
+    if (candidates.length === 0) return result;
+    return {
+      ...result,
+      externalCandidates: candidates.map(c => ({
+        provider: c.provider,
+        externalId: c.externalId,
+        sourceUrl: c.sourceUrl,
+        name: c.name,
+        brand: c.brand,
+        score: c.score,
+        calories: c.calories,
+        protein: c.protein,
+        carbs: c.carbs,
+        fat: c.fat,
+        servingGrams: c.servingGrams,
+        basis: c.basis,
+      })),
+      warnings: [
+        ...(result.warnings ?? []),
+        '외부 상품명 검색 후보가 있으나 자동 확정하지 않았습니다. 바코드나 영양성분표가 보이면 더 정확합니다.',
+      ],
+    };
+  } catch (e) {
+    console.warn(`[${opts.logPrefix}] external candidates skipped:`, e instanceof Error ? e.message : String(e));
+    return result;
   }
 }
 
