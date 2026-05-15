@@ -13,6 +13,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test:filter": "tsx scripts/test-content-filter.ts",
+    "eval:external": "tsx scripts/eval_external_resolver.ts",
     "import:foods": "tsx scripts/import_foods.ts",
     "import:franchise": "tsx scripts/import_franchise.ts",
     "crawl:franchise": "tsx scripts/crawl_franchise.ts"

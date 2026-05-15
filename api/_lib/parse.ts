@@ -72,7 +72,7 @@ export interface AnalysisResult {
   mealScore?: MealScore;
   improvements?: string[];
   warnings?: string[];
-  analysisSource?: 'visual_estimate' | 'package_label' | 'nutrition_label';
+  analysisSource?: 'visual_estimate' | 'package_label' | 'nutrition_label' | 'external_source';
   confidence?: '높음' | '중간' | '낮음';
 }
 
@@ -176,7 +176,7 @@ ${data.ingredients.map(i =>
     ? `\n## ⚠️ 주의사항\n${data.warnings.map(w => `- ${w}`).join('\n')}`
     : '';
   const sourceSection = data.analysisSource && data.analysisSource !== 'visual_estimate'
-    ? `\n> 분석 기준: ${data.analysisSource === 'nutrition_label' ? '영양성분표/포장 라벨' : '포장지 상품 정보'}`
+    ? `\n> 분석 기준: ${sourceLabel(data.analysisSource)}`
     : '';
 
   return `# ${data.foodName}
@@ -283,8 +283,22 @@ export function parseResult(jsonText: string, mode: AnalysisMode, provider: AIPr
 }
 
 function parseAnalysisSource(value: unknown): AnalysisResult['analysisSource'] {
-  if (value === 'nutrition_label' || value === 'package_label' || value === 'visual_estimate') {
+  if (
+    value === 'nutrition_label' ||
+    value === 'package_label' ||
+    value === 'visual_estimate' ||
+    value === 'external_source'
+  ) {
     return value;
   }
   return undefined;
+}
+
+function sourceLabel(source: NonNullable<AnalysisResult['analysisSource']>): string {
+  switch (source) {
+    case 'nutrition_label': return '영양성분표/포장 라벨';
+    case 'package_label': return '포장지 상품 정보';
+    case 'external_source': return '외부 공개 식품 데이터';
+    case 'visual_estimate': return '사진 추정';
+  }
 }
