@@ -15,6 +15,9 @@ export type AIProvider = 'gemini' | 'claude' | 'groq';
 
 export interface AnalyzeRequest {
   imageData: string;
+  /** normalizeForAnalysis() 후 canvas.width — AI bbox와 표시 픽셀 그리드 일치용 */
+  imageWidth?: number;
+  imageHeight?: number;
   age: number;
   gender: 'male' | 'female';
   existingMealsCount?: number;

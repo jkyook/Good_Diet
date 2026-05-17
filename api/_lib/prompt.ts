@@ -1,5 +1,67 @@
 // CoT 5-step 프롬프트. 클라이언트와 서버에서 동일한 시스템 메시지가 필요하지만,
 // 보안상 키 사용 코드는 서버에만 두어야 하므로 프롬프트도 서버 측에서 보유.
+
+/** 1단계: 사진 속 음식 덩어리(접시·그릇 단위) 위치만 감지 */
+export const FOOD_DETECT_SYSTEM = `당신은 음식 사진의 "음식 영역"만 찾는 비전 모델입니다.
+영양 계산·재료 분해는 하지 마세요. JSON만 출력하세요.
+
+규칙:
+- 서로 다른 접시/그릇/음식 덩어리마다 foodItems에 한 항목씩 넣으세요.
+- region: [ymin, xmin, ymax, xmax] 정수 0~1000 (왼쪽 위 원점, y 후 x).
+- 박스는 해당 음식이 차지하는 영역을 타이트하게 감싸야 합니다. 겹치지 않게 하세요.
+- 포장지·영양성분표만 보이면 sceneType을 "package_label"로, foodItems는 1개(포장 전체).
+- 한 접시 안의 여러 재료(고기·야채)는 하나의 foodItem으로 묶으세요. 재료 단위 박스는 금지.
+- 확실하지 않은 음식은 넣지 마세요. 최대 6개.
+- 추측 좌표 금지.
+
+{
+  "sceneType": "single_dish|multi_dish|package_label",
+  "foodItems": [
+    { "name": "음식명", "region": [100, 200, 600, 800] }
+  ]
+}`;
+
+export function buildFoodDetectUser(imageWidth: number, imageHeight: number): string {
+  return `이 JPEG 이미지는 정확히 ${imageWidth}×${imageHeight} 픽셀입니다.
+bbox [ymin,xmin,ymax,xmax]는 이 전체 ${imageWidth}×${imageHeight} 프레임 기준 0~1000 좌표입니다.
+접시·그릇 단위 음식을 모두 찾고 각 region을 주세요.`;
+}
+
+export const FOOD_DETECT_USER = '이 사진에서 먹는 음식(접시·그릇 단위)을 모두 찾고 각 영역 bbox를 주세요.';
+
+/** 1.5단계: 1차 bbox를 원본 사진 픽셀 좌표계(0~1000)에 맞게 교정 */
+export const FOOD_REFINE_SYSTEM = `당신은 음식 사진 bounding box 교정 전문가입니다.
+입력된 초안 bbox는 대략적입니다. 원본 사진 전체를 기준으로 각 음식이 실제로 보이는 영역에 맞게 교정하세요.
+
+좌표 규칙 (필수):
+- region: [ymin, xmin, ymax, xmax] — 정수 0~1000
+- 원점: 이미지 왼쪽 위. y가 먼저, x가 다음.
+- 좌표는 반드시 "업로드된 원본 사진 전체" 기준이어야 합니다 (크롭·확대 상상 금지).
+- 박스는 접시/음식 실루엣을 타이트하게 감싸되, 음식이 잘리지 않게 약간 여유를 둡니다.
+- 음식명(name)은 입력과 동일하게 유지하세요. 순서도 유지하세요.
+
+JSON만 출력:
+{
+  "sceneType": "multi_dish",
+  "foodItems": [
+    { "name": "음식명", "region": [ymin, xmin, ymax, xmax] }
+  ]
+}`;
+
+export function buildFoodRefineUser(
+  items: Array<{ name: string; region: [number, number, number, number] }>,
+  imageWidth: number,
+  imageHeight: number,
+): string {
+  const list = items.map((it, i) =>
+    `${i + 1}. "${it.name}" 초안 region: [${it.region.join(', ')}]`,
+  ).join('\n');
+  return `이미지는 정확히 ${imageWidth}×${imageHeight} 픽셀입니다. bbox는 이 전체 프레임 기준 0~1000입니다.
+아래 ${items.length}개 음식의 bbox를 교정하세요. 초안은 참고용입니다.
+
+${list}`;
+}
+
 export const FOOD_ANALYSIS_SYSTEM = `당신은 정밀 음식 분석 전문가입니다. 아래 5단계로 순서대로 분석하세요.
 
 [절대 사용 금지 — 의료법/식약처 가이드 준수]
@@ -34,6 +96,7 @@ export const FOOD_ANALYSIS_SYSTEM = `당신은 정밀 음식 분석 전문가입
 
 [Step 2 - 재료 분석]
 각 음식의 주재료, 조리법, 소스, 재료별 비율(%)을 추정하세요.
+ingredients에는 region/bbox 필드를 넣지 마세요 (위치는 별도 단계에서 처리됩니다).
 
 [Step 3 - 양 추정]
 위 표준 용기 기준과 사진의 그릇/참조물을 보고 각 음식의 총량(g)을 추정하세요.
@@ -97,4 +160,27 @@ export const buildQuickPrompt = (age: number, gender: string) =>
   `사용자: ${age}세 ${gender === 'male' ? '남성' : '여성'}. 이 음식을 분석해주세요.`;
 
 export const buildDetailedPrompt = (age: number, gender: string, mealNumber: number) =>
-  `사용자: ${age}세 ${gender === 'male' ? '남성' : '여성'}, 오늘 ${mealNumber}번째 식사. 이 음식을 상세 분석해주세요.`;
+  `사용자: ${age}세 ${gender === 'male' ? '남성' : '여성'}, 오늘 ${mealNumber}번째 식사. 이 음식을 상세 분석하세요.`;
+
+/** 2단계: 특정 음식 영역만 분석 */
+export function buildSegmentAnalysisPrompt(
+  foodName: string,
+  region: [number, number, number, number],
+  age: number,
+  gender: string,
+  mode: 'quick' | 'detailed',
+  mealNumber: number,
+): string {
+  const [y0, x0, y1, x1] = region;
+  const profile = mode === 'quick'
+    ? buildQuickPrompt(age, gender)
+    : buildDetailedPrompt(age, gender, mealNumber);
+  return `${profile}
+
+[분석 대상 — 아래 음식만]
+- 음식명: ${foodName}
+- 사진 내 영역 bbox [ymin,xmin,ymax,xmax]: [${y0}, ${x0}, ${y1}, ${x1}]
+이 bbox 안에 보이는 "${foodName}"만 분석하세요. 다른 접시·음식은 무시하세요.
+foodName은 "${foodName}"(과) 일치해야 합니다. detectedFoods는 ["${foodName}"]만 넣으세요.
+ingredients의 parentFood는 모두 "${foodName}"이어야 합니다.`;
+}

@@ -3,6 +3,9 @@ import type { AIProvider, AnalysisMode } from './types.js';
 
 export type FoodCategory = '고기' | '야채' | '면' | '기타';
 
+/** Gemini 표준 bbox: [ymin, xmin, ymax, xmax], 0~1000 정규화 */
+export type NormalizedBBox = [number, number, number, number];
+
 export interface IngredientDetail {
   name: string;
   parentFood: string;
@@ -12,6 +15,7 @@ export interface IngredientDetail {
   protein: number;
   carbs: number;
   fat: number;
+  region?: NormalizedBBox;
 }
 
 export interface PortionEstimate {
@@ -63,6 +67,27 @@ export interface ExternalNutritionCandidate {
   basis: 'serving' | '100g';
 }
 
+/** 2단계 분석: 접시/음식 단위 사진 오버레이 */
+export interface FoodSegment {
+  name: string;
+  region: NormalizedBBox;
+  calories: number;
+  weightGrams: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}
+
+export interface DetectedFoodItem {
+  name: string;
+  region: NormalizedBBox;
+}
+
+export interface FoodDetectionResult {
+  sceneType: 'single_dish' | 'multi_dish' | 'package_label';
+  items: DetectedFoodItem[];
+}
+
 export interface AnalysisResult {
   date: string;
   foodName: string;
@@ -83,6 +108,7 @@ export interface AnalysisResult {
   externalCandidates?: ExternalNutritionCandidate[];
   isAmbiguous: boolean;
   detectedFoods?: string[];
+  foodSegments?: FoodSegment[];
   ingredients?: IngredientDetail[];
   portionEstimate?: PortionEstimate;
   totals?: NutritionTotals;
@@ -91,6 +117,9 @@ export interface AnalysisResult {
   warnings?: string[];
   analysisSource?: 'visual_estimate' | 'package_label' | 'nutrition_label' | 'external_source';
   confidence?: '높음' | '중간' | '낮음';
+  /** 분석에 사용된 정규화 이미지 픽셀 크기 (오버레이 1:1 매핑) */
+  imageWidth?: number;
+  imageHeight?: number;
 }
 
 export class JSONParseError extends Error {
@@ -272,7 +301,7 @@ export function parseResult(jsonText: string, mode: AnalysisMode, provider: AIPr
     isAmbiguous: false,
     detectedFoods: Array.isArray(raw.detectedFoods) ? raw.detectedFoods as string[] : undefined,
     barcode: parseBarcode(raw.barcode),
-    ingredients: Array.isArray(raw.ingredients) ? raw.ingredients as IngredientDetail[] : undefined,
+    ingredients: parseIngredients(raw.ingredients),
     portionEstimate: portionRaw ? {
       method: portionRaw.method as string ?? '',
       referenceObject: portionRaw.referenceObject as string ?? '',
@@ -307,6 +336,76 @@ function parseBarcode(value: unknown): string | undefined {
   return digits.length >= 8 && digits.length <= 14 ? digits : undefined;
 }
 
+function parseNormalizedBBox(value: unknown): NormalizedBBox | undefined {
+  let nums: number[];
+
+  if (Array.isArray(value) && value.length === 4) {
+    nums = value.map(v => Number(v));
+  } else if (value && typeof value === 'object') {
+    const o = value as Record<string, unknown>;
+    nums = [
+      o.ymin ?? o.y_min ?? o.top,
+      o.xmin ?? o.x_min ?? o.left,
+      o.ymax ?? o.y_max ?? o.bottom,
+      o.xmax ?? o.x_max ?? o.right,
+    ].map(v => Number(v));
+  } else {
+    return undefined;
+  }
+
+  if (nums.some(n => !Number.isFinite(n))) return undefined;
+
+  let [y0, x0, y1, x1] = nums;
+  if (nums.every(n => n >= 0 && n <= 1)) {
+    y0 *= 1000;
+    x0 *= 1000;
+    y1 *= 1000;
+    x1 *= 1000;
+  }
+
+  const clamp = (n: number) => Math.max(0, Math.min(1000, Math.round(n)));
+  y0 = clamp(y0);
+  x0 = clamp(x0);
+  y1 = clamp(y1);
+  x1 = clamp(x1);
+
+  if (y1 <= y0 || x1 <= x0) return undefined;
+
+  const minSpan = 20;
+  const expand = (a: number, b: number) => {
+    if (b - a >= minSpan) return [a, b] as const;
+    const c = (a + b) / 2;
+    return [Math.max(0, c - minSpan / 2), Math.min(1000, c + minSpan / 2)] as const;
+  };
+  [y0, y1] = expand(y0, y1);
+  [x0, x1] = expand(x0, x1);
+  return [Math.round(y0), Math.round(x0), Math.round(y1), Math.round(x1)];
+}
+
+function parseIngredients(raw: unknown): IngredientDetail[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const items = raw
+    .map(item => {
+      if (!item || typeof item !== 'object') return null;
+      const o = item as Record<string, unknown>;
+      const name = String(o.name ?? '').trim();
+      if (!name) return null;
+      return {
+        name,
+        parentFood: String(o.parentFood ?? o.parent_food ?? ''),
+        ratio: Number(o.ratio) || 0,
+        weightGrams: Number(o.weightGrams ?? o.weight_grams) || 0,
+        calories: Number(o.calories) || 0,
+        protein: Number(o.protein) || 0,
+        carbs: Number(o.carbs) || 0,
+        fat: Number(o.fat) || 0,
+        region: parseNormalizedBBox(o.region ?? o.bbox ?? o.box),
+      } as IngredientDetail;
+    })
+    .filter((x): x is IngredientDetail => x != null);
+  return items.length > 0 ? items : undefined;
+}
+
 function parseAnalysisSource(value: unknown): AnalysisResult['analysisSource'] {
   if (
     value === 'nutrition_label' ||
@@ -326,4 +425,128 @@ function sourceLabel(source: NonNullable<AnalysisResult['analysisSource']>): str
     case 'external_source': return '외부 공개 식품 데이터';
     case 'visual_estimate': return '사진 추정';
   }
+}
+
+export function parseFoodDetection(jsonText: string): FoodDetectionResult {
+  const cleaned = extractJSON(jsonText);
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(cleaned);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new JSONParseError(`음식 영역 감지 JSON 파싱 실패: ${detail}`);
+  }
+
+  const sceneRaw = raw.sceneType ?? raw.scene_type;
+  const sceneType: FoodDetectionResult['sceneType'] =
+    sceneRaw === 'package_label' ? 'package_label'
+      : sceneRaw === 'multi_dish' ? 'multi_dish'
+        : 'single_dish';
+
+  const arr = (raw.foodItems ?? raw.food_items ?? raw.items) as unknown;
+  const items: DetectedFoodItem[] = [];
+  if (Array.isArray(arr)) {
+    for (const entry of arr) {
+      if (!entry || typeof entry !== 'object') continue;
+      const o = entry as Record<string, unknown>;
+      const name = String(o.name ?? o.foodName ?? '').trim();
+      const region = parseNormalizedBBox(o.region ?? o.bbox ?? o.box);
+      if (!name || !region) continue;
+      items.push({ name, region });
+    }
+  }
+
+  return { sceneType, items };
+}
+
+const CONF_RANK: Record<string, number> = { '낮음': 0, '중간': 1, '높음': 2 };
+
+export function mergeSegmentResults(
+  segments: Array<{ item: DetectedFoodItem; result: AnalysisResult }>,
+  mode: AnalysisMode,
+  provider: AIProvider,
+): AnalysisResult {
+  const first = segments[0].result;
+  const names = segments.map(s => s.item.name);
+  const foodSegments: FoodSegment[] = segments.map(({ item, result }) => {
+    const t = result.totals;
+    return {
+      name: item.name,
+      region: item.region,
+      calories: t?.calories ?? result.calories,
+      weightGrams: result.weightGrams,
+      protein: t?.protein ?? result.protein,
+      carbs: t?.carbs ?? result.carbs,
+      fat: t?.fat ?? result.fat,
+    };
+  });
+
+  const ingredients = segments.flatMap(({ item, result }) =>
+    (result.ingredients ?? []).map(ing => ({
+      ...ing,
+      parentFood: item.name,
+      region: undefined,
+    })),
+  );
+
+  const totalCal = foodSegments.reduce((a, s) => a + s.calories, 0);
+  const totalProtein = foodSegments.reduce((a, s) => a + s.protein, 0);
+  const totalCarbs = foodSegments.reduce((a, s) => a + s.carbs, 0);
+  const totalFat = foodSegments.reduce((a, s) => a + s.fat, 0);
+  const totalWeight = foodSegments.reduce((a, s) => a + s.weightGrams, 0);
+  const totalSodium = segments.reduce(
+    (a, s) => a + (s.result.totals?.sodium ?? 0),
+    0,
+  );
+
+  const improvements = [...new Set(segments.flatMap(s => s.result.improvements ?? []))];
+  const warnings = [...new Set(segments.flatMap(s => s.result.warnings ?? []))];
+
+  let lowestConf: '높음' | '중간' | '낮음' = '높음';
+  for (const { result } of segments) {
+    const c = result.confidence ?? result.portionEstimate?.confidence ?? '중간';
+    if ((CONF_RANK[c] ?? 1) < (CONF_RANK[lowestConf] ?? 2)) lowestConf = c;
+  }
+
+  const merged: AnalysisResult = {
+    date: new Date().toISOString(),
+    foodName: names.join(' · '),
+    category: first.category,
+    cookingMethod: segments.length > 1 ? '복합 식사' : first.cookingMethod,
+    sauce: first.sauce,
+    weightGrams: Math.round(totalWeight * 10) / 10,
+    calories: Math.round(totalCal),
+    protein: Math.round(totalProtein * 10) / 10,
+    carbs: Math.round(totalCarbs * 10) / 10,
+    fat: Math.round(totalFat * 10) / 10,
+    mealTip: segments.map(s => s.result.mealTip).filter(Boolean).join(' '),
+    markdown: '',
+    mode,
+    provider,
+    isAmbiguous: false,
+    detectedFoods: names,
+    foodSegments,
+    ingredients: ingredients.length > 0 ? ingredients : undefined,
+    totals: {
+      calories: Math.round(totalCal),
+      protein: Math.round(totalProtein * 10) / 10,
+      carbs: Math.round(totalCarbs * 10) / 10,
+      fat: Math.round(totalFat * 10) / 10,
+      sodium: Math.round(totalSodium),
+    },
+    mealScore: first.mealScore,
+    improvements: improvements.length ? improvements : undefined,
+    warnings: warnings.length ? warnings : undefined,
+    analysisSource: 'visual_estimate',
+    confidence: lowestConf,
+    portionEstimate: {
+      method: '2단계 영역별 분석 합산',
+      referenceObject: names.join(', '),
+      totalWeightGrams: Math.round(totalWeight),
+      confidence: lowestConf,
+    },
+  };
+
+  merged.markdown = buildMarkdown(merged);
+  return merged;
 }

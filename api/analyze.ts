@@ -1,8 +1,10 @@
 import type { ApiReq, ApiRes, AnalyzeRequest, AIProvider } from './_lib/types.js';
 import {
-  callProvider, FALLBACK_ORDER, PROVIDER_AVAILABLE, PROVIDER_LABELS, isQuotaError,
+  FALLBACK_ORDER, PROVIDER_AVAILABLE, PROVIDER_LABELS, isQuotaError,
 } from './_lib/providers.js';
-import { parseResult, JSONParseError } from './_lib/parse.js';
+import { JSONParseError } from './_lib/parse.js';
+import { runStagedAnalysis } from './_lib/multiStage.js';
+import { canonicalizeImageInput } from './_lib/imageCanonical.js';
 import { buildQuickPrompt, buildDetailedPrompt } from './_lib/prompt.js';
 import { checkRateLimit } from './_lib/rateLimit.js';
 import { handlePreflight } from './_lib/cors.js';
@@ -43,7 +45,16 @@ export default async function handler(req: ApiReq, res: ApiRes) {
   // Vercel은 Content-Type: application/json 인 경우 req.body 자동 파싱.
   // 로컬 vite proxy 환경 등에서 미파싱이면 수동 파싱.
   const body: AnalyzeRequest = await readBody(req);
-  const { imageData, age, gender, existingMealsCount = 0, mode = 'detailed', provider = 'claude' } = body;
+  const {
+    imageData,
+    imageWidth: reqWidth,
+    imageHeight: reqHeight,
+    age,
+    gender,
+    existingMealsCount = 0,
+    mode = 'detailed',
+    provider = 'claude',
+  } = body;
 
   if (!age || !gender) {
     res.statusCode = 400;
@@ -57,6 +68,16 @@ export default async function handler(req: ApiReq, res: ApiRes) {
     res.statusCode = imageErr.status;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: imageErr.error }));
+    return;
+  }
+
+  let canonical;
+  try {
+    canonical = canonicalizeImageInput(imageData, reqWidth, reqHeight);
+  } catch (e) {
+    res.statusCode = 400;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: e instanceof Error ? e.message : '이미지 검증 실패' }));
     return;
   }
 
@@ -105,7 +126,7 @@ export default async function handler(req: ApiReq, res: ApiRes) {
   const prompt = mode === 'quick'
     ? buildQuickPrompt(age, gender)
     : buildDetailedPrompt(age, gender, existingMealsCount + 1);
-  const base64Data = imageData.split(',')[1] || imageData;
+  const base64Data = canonical.imageData.split(',')[1] || canonical.imageData;
 
   const ordered: AIProvider[] = [
     provider,
@@ -126,11 +147,26 @@ export default async function handler(req: ApiReq, res: ApiRes) {
     try {
       send(res, { type: 'step', index: 0, detail: `${PROVIDER_LABELS[cur]} 연결 완료` });
       // T-035: step 1을 AI 호출 직전에 사전 emit. 의미는 "음식 감지 완료"가 아니라 "AI 응답 대기 중".
-      send(res, { type: 'step', index: 1, detail: `${PROVIDER_LABELS[cur]} 분석 요청 중` });
-      const text = await callProvider(cur, base64Data, prompt, mode);
-      const result = parseResult(text, mode, cur);
+      send(res, { type: 'step', index: 1, detail: `${PROVIDER_LABELS[cur]} 2단계 분석 시작` });
+      const result = await runStagedAnalysis(
+        cur,
+        base64Data,
+        prompt,
+        mode,
+        {
+          age,
+          gender,
+          existingMealsCount,
+          imageWidth: canonical.width,
+          imageHeight: canonical.height,
+        },
+        detail => send(res, { type: 'step', index: 1, detail }),
+      );
 
-      send(res, { type: 'step', index: 2, detail: `${result.calories} kcal | ${result.weightGrams}g 산출됨` });
+      const segHint = result.foodSegments?.length
+        ? ` · ${result.foodSegments.length}개 음식 영역`
+        : '';
+      send(res, { type: 'step', index: 2, detail: `${result.calories} kcal | ${result.weightGrams}g 산출됨${segHint}` });
       send(res, { type: 'step', index: 3, detail: result.portionEstimate ? `${result.portionEstimate.referenceObject} 기준 추정` : `"${result.foodName}" 분류 완료` });
       send(res, { type: 'step', index: 4, detail: `신뢰도: ${result.confidence ?? '중간'}` });
 

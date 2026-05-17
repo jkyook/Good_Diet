@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Images, X, Loader2, CheckCircle, AlertCircle, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 import { analyzeFoodBatch, AnalysisResult, MealType, AIProvider, AnalysisMode } from '../services/geminiService';
 import { pickMultipleFromGallery, pickMultipleFromInput } from '../services/cameraService';
-import { compressDataUrl } from '../utils/imageCompress';
+import { normalizeForAnalysis } from '../utils/analysisImage';
 import { Capacitor } from '@capacitor/core';
 
 interface BatchResult {
@@ -44,8 +44,8 @@ export default function BatchAnalyzer({ age, gender, provider, mealType, onCompl
 
     if (!picked.length) return;
     // 다중 페이로드 4.5MB 한도 회피 — 선택 직후 동시 압축.
-    const compressed = await Promise.all(picked.map(p => compressDataUrl(p.dataUrl)));
-    setSelectedImages(compressed);
+    const normalized = await Promise.all(picked.map(p => normalizeForAnalysis(p.dataUrl)));
+    setSelectedImages(normalized.map(n => n.dataUrl));
     setBatchResults([]);
   };
 

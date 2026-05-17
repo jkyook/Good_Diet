@@ -52,7 +52,7 @@ import SnackRecommendCard from './components/recommend/SnackRecommendCard';
 import { recommendExercise } from './utils/exerciseRecommend';
 import { recommendSnack } from './utils/snackRecommend';
 import { calcDailyScore } from './services/scoreService';
-import { compressImage, fileToDataUrl } from './utils/imageCompress';
+import { normalizeForAnalysis } from './utils/analysisImage';
 import type { AnalysisStep } from './components/AnalysisProgress.types';
 import type { BatchAnalysisCompletion } from './components/BatchAnalyzer';
 import type { MealRecord, DailyScore } from './types';
@@ -440,8 +440,9 @@ export default function App() {
         setLoadingStep(0);
         setStepDetails({});
 
-        const compressed = await compressImage(img.file);
-        const base64 = await fileToDataUrl(compressed);
+        setStepDetails({ 0: '분석용 이미지 크기 통일 중…' });
+        const normalized = await normalizeForAnalysis(img.file);
+        setCurrentAnalyzingImageUrl(normalized.dataUrl);
 
         const today = new Date().toDateString();
         const inHistory = history.filter(h => new Date(h.date).toDateString() === today).length;
@@ -462,7 +463,17 @@ export default function App() {
         };
 
         // 폴백은 서버(/api/analyze)에서 처리됨 — 클라이언트는 한 번만 호출
-        const analysis = await analyzeFood(base64, age, gender, inHistory + inBatch, analysisMode, provider, onEvent);
+        const analysis = await analyzeFood(
+          normalized.dataUrl,
+          age,
+          gender,
+          inHistory + inBatch,
+          analysisMode,
+          provider,
+          onEvent,
+          normalized.width,
+          normalized.height,
+        );
         // T-058: analysis.provider 변경 사실은 사용자에게 노출하지 않음.
         // T-068: N인분이면 영양/양 필드를 1인분 기준으로 환산해서 DB에 저장. portion_count는 원본 N 보존.
         const perPortion = divideByPortion(analysis, portionCount);
@@ -470,7 +481,9 @@ export default function App() {
         results.push({
           ...perPortion,
           id: img.id,
-          image: base64,
+          image: normalized.dataUrl,
+          imageWidth: analysis.imageWidth ?? normalized.width,
+          imageHeight: analysis.imageHeight ?? normalized.height,
           mealType,
           portionCount,
           matchedFoodId: analysis.dbMatch?.food_id ?? null,

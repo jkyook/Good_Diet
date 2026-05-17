@@ -4,6 +4,7 @@ import { AlertTriangle, ChevronDown, ChevronUp, ExternalLink, Lightbulb, Star } 
 import { AnalysisResult, MealType } from '../services/geminiService';
 import { reportMatchCorrection } from '../services/supabaseService';
 import MatchCorrectionModal, { type CorrectionReason } from './meal/MatchCorrectionModal';
+import IngredientPhotoOverlay from './IngredientPhotoOverlay';
 
 // 일일 권장량 기준 (수아 T-010 설계)
 const DAILY_REF = { protein: 55, carbs: 324, fat: 54, sodium: 2000 };
@@ -82,29 +83,37 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
         </p>
       </div>
 
-      {/* ── 섹션 1: 요약 카드 ── */}
+      {/* ── 섹션 1: 사진 + 재료 위치 오버레이 ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {meal.image && (
-          <div className="relative aspect-video">
-            <img src={meal.image} className="w-full h-full object-cover" alt={meal.foodName} />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-            {/* 식사 타입 뱃지 */}
-            <div className="absolute top-3 left-3 flex items-center gap-2">
-              <span className="bg-white/90 backdrop-blur-sm text-xs font-bold px-2.5 py-1 rounded-full">
+          <div className="p-3 pb-0">
+            <div className="flex flex-wrap items-center gap-2 mb-2 px-1">
+              <span className="bg-gray-100 text-xs font-bold px-2.5 py-1 rounded-full">
                 {mealLabel.emoji} {mealLabel.label}
               </span>
               <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${CONFIDENCE_STYLE[confidence] ?? CONFIDENCE_STYLE['중간']}`}>
                 신뢰도 {confidence}
               </span>
+              {meal.analysisSource && (
+                <span className="text-xs text-gray-500 ml-auto">
+                  {meal.analysisSource === 'nutrition_label' || meal.analysisSource === 'package_label'
+                    ? '📦 라벨 기준'
+                    : meal.analysisSource === 'external_source'
+                      ? '🌐 외부 DB'
+                      : '📷 사진 추정'}
+                </span>
+              )}
             </div>
-            {/* 칼로리 오버레이 */}
-            <div className="absolute bottom-3 right-3 text-right">
-              <p className="text-3xl font-black text-white leading-none">
-                {totals.calories.toLocaleString()}
-                <span className="text-sm font-normal ml-1">kcal</span>
-              </p>
-              <p className="text-white/70 text-xs">{weightOverride}g</p>
-            </div>
+            <IngredientPhotoOverlay
+              imageSrc={meal.image}
+              foodName={meal.foodName}
+              imageWidth={meal.imageWidth}
+              imageHeight={meal.imageHeight}
+              foodSegments={meal.foodSegments}
+              ingredients={meal.ingredients ?? []}
+              calories={totals.calories}
+              weightGrams={weightOverride}
+            />
           </div>
         )}
 
@@ -185,7 +194,12 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
             onClick={() => setShowIngredients(e => !e)}
             className="flex items-center justify-between w-full p-4"
           >
-            <span className="text-sm font-bold text-gray-700">재료별 분석</span>
+            <span className="text-sm font-bold text-gray-700">
+              재료별 분석
+              {(meal.foodSegments?.length || meal.ingredients?.some(i => i.region)) && (
+                <span className="text-xs font-normal text-emerald-600 ml-1.5">· 사진 영역 연동</span>
+              )}
+            </span>
             {showIngredients ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
           </button>
           {showIngredients && (
@@ -195,6 +209,9 @@ export default function AnalysisResultCard({ meal, dailyCalorieTarget, dailyCalo
                   <div className="flex items-center justify-between mb-1">
                     <div>
                       <span className="text-sm font-medium text-gray-800">{ing.name}</span>
+                      {ing.region && (
+                        <span className="text-[10px] text-emerald-600 ml-1">📍</span>
+                      )}
                       <span className="text-xs text-gray-400 ml-1.5">({ing.parentFood})</span>
                     </div>
                     <div className="text-right text-xs text-gray-500">

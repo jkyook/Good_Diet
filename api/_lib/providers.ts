@@ -28,26 +28,36 @@ export const PROVIDER_LABELS: Record<AIProvider, string> = {
 
 export const FALLBACK_ORDER: AIProvider[] = ['claude', 'gemini', 'groq'];
 
-async function callGemini(base64Data: string, prompt: string): Promise<string> {
+async function callGemini(
+  base64Data: string,
+  prompt: string,
+  system: string,
+  maxOutputTokens: number,
+): Promise<string> {
   const response = await geminiAI!.models.generateContent({
     model: 'gemini-1.5-flash',
     contents: [{
       parts: [
-        { text: FOOD_ANALYSIS_SYSTEM + '\n\n' + prompt },
+        { text: system + '\n\n' + prompt },
         { inlineData: { mimeType: 'image/jpeg', data: base64Data } },
       ],
     }],
-    config: { temperature: 0.1, maxOutputTokens: 2048 },
+    config: { temperature: 0.1, maxOutputTokens },
   });
   return response.text || '';
 }
 
-async function callClaude(base64Data: string, prompt: string, _mode: AnalysisMode): Promise<string> {
+async function callClaude(
+  base64Data: string,
+  prompt: string,
+  system: string,
+  maxOutputTokens: number,
+): Promise<string> {
   const model = 'claude-haiku-4-5-20251001';
   const response = await claudeAI!.messages.create({
     model,
-    max_tokens: 2048,
-    system: FOOD_ANALYSIS_SYSTEM,
+    max_tokens: maxOutputTokens,
+    system,
     messages: [{
       role: 'user',
       content: [
@@ -61,7 +71,12 @@ async function callClaude(base64Data: string, prompt: string, _mode: AnalysisMod
 
 // T-038: xAI Grok 엔드포인트 (OpenAI 호환 API). 함수명 callGroq 는 슬롯 식별자
 // 'groq' 와 일관성을 위해 유지 — 후속 정리 PR 에서 callXAI 로 변경 예정.
-async function callGroq(base64Data: string, prompt: string, mode: AnalysisMode): Promise<string> {
+async function callGroq(
+  base64Data: string,
+  prompt: string,
+  system: string,
+  maxOutputTokens: number,
+): Promise<string> {
   const res = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -71,7 +86,7 @@ async function callGroq(base64Data: string, prompt: string, mode: AnalysisMode):
     body: JSON.stringify({
       model: 'grok-4-fast-non-reasoning',
       messages: [
-        { role: 'system', content: FOOD_ANALYSIS_SYSTEM },
+        { role: 'system', content: system },
         {
           role: 'user',
           content: [
@@ -80,7 +95,7 @@ async function callGroq(base64Data: string, prompt: string, mode: AnalysisMode):
           ],
         },
       ],
-      max_tokens: mode === 'quick' ? 1536 : 2048,
+      max_tokens: maxOutputTokens,
       temperature: 0.1,
     }),
   });
@@ -94,20 +109,36 @@ async function callGroq(base64Data: string, prompt: string, mode: AnalysisMode):
   return data.choices?.[0]?.message?.content || '';
 }
 
+function defaultMaxTokens(mode: AnalysisMode): number {
+  return mode === 'quick' ? 1536 : 2048;
+}
+
+export async function callProviderWithSystem(
+  provider: AIProvider,
+  system: string,
+  base64Data: string,
+  prompt: string,
+  mode: AnalysisMode,
+  maxOutputTokens?: number,
+): Promise<string> {
+  if (!PROVIDER_AVAILABLE[provider]) {
+    throw new Error(`${provider.toUpperCase()} API 키가 서버에 설정되지 않았습니다.`);
+  }
+  const tokens = maxOutputTokens ?? defaultMaxTokens(mode);
+  switch (provider) {
+    case 'gemini': return callGemini(base64Data, prompt, system, tokens);
+    case 'claude': return callClaude(base64Data, prompt, system, tokens);
+    case 'groq':   return callGroq(base64Data, prompt, system, tokens);
+  }
+}
+
 export async function callProvider(
   provider: AIProvider,
   base64Data: string,
   prompt: string,
   mode: AnalysisMode,
 ): Promise<string> {
-  if (!PROVIDER_AVAILABLE[provider]) {
-    throw new Error(`${provider.toUpperCase()} API 키가 서버에 설정되지 않았습니다.`);
-  }
-  switch (provider) {
-    case 'gemini': return callGemini(base64Data, prompt);
-    case 'claude': return callClaude(base64Data, prompt, mode);
-    case 'groq':   return callGroq(base64Data, prompt, mode);
-  }
+  return callProviderWithSystem(provider, FOOD_ANALYSIS_SYSTEM, base64Data, prompt, mode);
 }
 
 export function isQuotaError(message: string): boolean {

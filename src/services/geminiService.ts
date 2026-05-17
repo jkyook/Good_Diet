@@ -35,12 +35,27 @@ export type AIProvider = 'gemini' | 'claude' | 'groq';
 export type FoodCategory = '고기' | '야채' | '면' | '기타';
 
 // --- 도메인 타입 ---
+/** Gemini 표준 bbox: [ymin, xmin, ymax, xmax], 0~1000 */
+export type NormalizedBBox = [number, number, number, number];
+
 export interface IngredientDetail {
   name: string;
   parentFood: string;
   ratio: number;
   weightGrams: number;
   calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  region?: NormalizedBBox;
+}
+
+/** 2단계 분석: 접시·음식 단위 사진 오버레이 */
+export interface FoodSegment {
+  name: string;
+  region: NormalizedBBox;
+  calories: number;
+  weightGrams: number;
   protein: number;
   carbs: number;
   fat: number;
@@ -128,6 +143,7 @@ export interface AnalysisResult {
   externalCandidates?: ExternalNutritionCandidate[];
   isAmbiguous: boolean;
   detectedFoods?: string[];
+  foodSegments?: FoodSegment[];
   ingredients?: IngredientDetail[];
   portionEstimate?: PortionEstimate;
   totals?: NutritionTotals;
@@ -136,6 +152,8 @@ export interface AnalysisResult {
   warnings?: string[];
   analysisSource?: 'visual_estimate' | 'package_label' | 'nutrition_label' | 'external_source';
   confidence?: '높음' | '중간' | '낮음';
+  imageWidth?: number;
+  imageHeight?: number;
   recommendations?: Recommendations;
   /** T-069: DB 식품 매칭 결과 (similarity > 0.7 시에만 포함). 영양정보는 이미 result.* 에 반영됨. */
   dbMatch?: {
@@ -278,13 +296,17 @@ export const analyzeFood = async (
   mode: AnalysisMode = 'detailed',
   provider: AIProvider = 'groq',
   onEvent?: (event: StreamEvent) => void,
+  imageWidth?: number,
+  imageHeight?: number,
 ): Promise<AnalysisResult> => {
   let res: Response;
   try {
     res = await fetch(`${API_BASE}/api/analyze`, {
       method: 'POST',
       headers: await authHeaders(),
-      body: JSON.stringify({ imageData, age, gender, existingMealsCount, mode, provider }),
+      body: JSON.stringify({
+        imageData, imageWidth, imageHeight, age, gender, existingMealsCount, mode, provider,
+      }),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

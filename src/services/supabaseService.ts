@@ -109,6 +109,42 @@ export function onAuthChange(
   return () => subscription.subscription.unsubscribe();
 }
 
+// foodSegments는 portion_estimate jsonb에 함께 저장 (별도 마이그레이션 없음)
+function buildPortionEstimateRow(meal: MealRecord) {
+  if (!meal.portionEstimate && !meal.foodSegments?.length && !meal.imageWidth && !meal.imageHeight) {
+    return null;
+  }
+  return {
+    ...(meal.portionEstimate ?? {}),
+    ...(meal.foodSegments?.length ? { foodSegments: meal.foodSegments } : {}),
+    ...(meal.imageWidth ? { analysisWidth: meal.imageWidth } : {}),
+    ...(meal.imageHeight ? { analysisHeight: meal.imageHeight } : {}),
+  };
+}
+
+function parsePortionEstimateRow(row: Record<string, unknown> | null | undefined) {
+  if (!row || typeof row !== 'object') {
+    return { portionEstimate: undefined, foodSegments: undefined };
+  }
+  const { foodSegments, analysisWidth, analysisHeight, ...rest } = row as Record<string, unknown> & {
+    foodSegments?: MealRecord['foodSegments'];
+    analysisWidth?: number;
+    analysisHeight?: number;
+  };
+  const hasPe = rest.method != null || rest.referenceObject != null;
+  return {
+    portionEstimate: hasPe ? {
+      method: String(rest.method ?? ''),
+      referenceObject: String(rest.referenceObject ?? ''),
+      totalWeightGrams: Number(rest.totalWeightGrams) || 0,
+      confidence: (rest.confidence as '높음' | '중간' | '낮음') ?? '중간',
+    } : undefined,
+    foodSegments: Array.isArray(foodSegments) ? foodSegments as MealRecord['foodSegments'] : undefined,
+    imageWidth: typeof analysisWidth === 'number' ? analysisWidth : undefined,
+    imageHeight: typeof analysisHeight === 'number' ? analysisHeight : undefined,
+  };
+}
+
 // ── DB 헬퍼: MealRecord → DB 행 ───────────────────────────────────────────────
 
 function toRow(meal: MealRecord, userId: string) {
@@ -137,7 +173,7 @@ function toRow(meal: MealRecord, userId: string) {
     is_ambiguous:     meal.isAmbiguous,
     candidates:       meal.candidates ?? null,
     ingredients:      meal.ingredients ?? null,
-    portion_estimate: meal.portionEstimate ?? null,
+    portion_estimate: buildPortionEstimateRow(meal),
     totals:           meal.totals ?? null,
     meal_score:       meal.mealScore ?? null,
     improvements:     meal.improvements ?? null,
@@ -176,7 +212,7 @@ function fromRow(row: Record<string, any>): MealRecord {
     isAmbiguous:     row.is_ambiguous ?? false,
     candidates:      row.candidates ?? undefined,
     ingredients:     row.ingredients ?? undefined,
-    portionEstimate: row.portion_estimate ?? undefined,
+    ...parsePortionEstimateRow(row.portion_estimate as Record<string, unknown> | null),
     totals:          row.totals ?? undefined,
     mealScore:       row.meal_score ?? undefined,
     improvements:    row.improvements ?? undefined,
