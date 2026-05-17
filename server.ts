@@ -18,7 +18,7 @@ dotenv.config();
 
 const app = express();
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:5173', 'capacitor://localhost', 'ionic://localhost', 'https://localhost', 'http://localhost'],
+  origin: ['http://localhost:3002', 'http://localhost:5173', 'capacitor://localhost', 'ionic://localhost', 'https://localhost', 'http://localhost'],
   credentials: true,
 }));
 app.use(express.json({ limit: '90mb' }));

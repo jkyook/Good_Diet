@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'fatguard',
   webDir: 'dist',
   server: {
-    // 개발: npm run dev:all 후 로컬 IP 입력 (예: http://192.168.0.x:3000)
+    // 개발: npm run dev:all 후 로컬 IP 입력 (예: http://192.168.0.x:3002)
     // 배포: process.env.APP_URL ?? undefined
     url: process.env.CAPACITOR_SERVER_URL ?? undefined,
     cleartext: true, // Android HTTP 허용

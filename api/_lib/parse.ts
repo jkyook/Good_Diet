@@ -361,6 +361,16 @@ function parseNormalizedBBox(value: unknown): NormalizedBBox | undefined {
     x0 *= 1000;
     y1 *= 1000;
     x1 *= 1000;
+  } else {
+    const max = Math.max(y0, x0, y1, x1);
+    const area = Math.max(0, y1 - y0) * Math.max(0, x1 - x0);
+    // 0~100 퍼센트 스케일 (전부 100 이하·면적이 작게 잡힌 경우)
+    if (max <= 100 && nums.every(n => n >= 0 && n <= 100) && area > 0 && area < 12_000) {
+      y0 *= 10;
+      x0 *= 10;
+      y1 *= 10;
+      x1 *= 10;
+    }
   }
 
   const clamp = (n: number) => Math.max(0, Math.min(1000, Math.round(n)));
@@ -371,7 +381,7 @@ function parseNormalizedBBox(value: unknown): NormalizedBBox | undefined {
 
   if (y1 <= y0 || x1 <= x0) return undefined;
 
-  const minSpan = 20;
+  const minSpan = 12;
   const expand = (a: number, b: number) => {
     if (b - a >= minSpan) return [a, b] as const;
     const c = (a + b) / 2;

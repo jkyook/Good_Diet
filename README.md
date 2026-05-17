@@ -20,7 +20,7 @@ npm install
 npm run dev:all
 ```
 
-웹 앱은 기본 `http://localhost:3000`, 로컬 API 서버는 `http://localhost:3001`에서 실행됩니다. Vite 개발 서버는 `/api/*` 요청을 로컬 API 서버로 프록시합니다.
+웹 앱은 기본 `http://localhost:3002`, 로컬 API 서버는 `http://localhost:3001`에서 실행됩니다. Vite 개발 서버는 `/api/*` 요청을 로컬 API 서버로 프록시합니다.
 
 ## 환경변수
 
