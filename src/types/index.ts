@@ -2,6 +2,14 @@ import type { AnalysisMode, AIProvider, MealType, AnalysisResult } from '../serv
 
 export type { AnalysisMode, AIProvider, MealType, AnalysisResult };
 
+/** 식사 메모 — 누구랑, 어디서, 주류, 기타 노트 */
+export interface MealMemo {
+  with?: string;    // 누구랑
+  place?: string;   // 어디서
+  alcohol?: string; // 주류 종류/양
+  note?: string;    // 기타 메모
+}
+
 export interface MealRecord extends AnalysisResult {
   id: string;
   image: string;
@@ -12,6 +20,10 @@ export interface MealRecord extends AnalysisResult {
   matchedFoodId?: string | null;
   /** T-072: 매칭 유사도 (0~1) — supabase 영속. */
   matchSimilarity?: number | null;
+  /** 식사 메모 (누구랑, 어디서, 주류, 노트) — localStorage 영속, Supabase 선택 동기. */
+  memo?: MealMemo;
+  /** 분석 시 자동 수집된 위치 (동 단위). 예: "서교동" */
+  locationDong?: string;
 }
 
 export interface DailyScore {

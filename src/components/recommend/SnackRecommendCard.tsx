@@ -30,7 +30,12 @@ export default function SnackRecommendCard({ snacks, missing }: SnackRecommendCa
           >
             <span aria-hidden="true">{s.emoji}</span>
             <div className="flex-1 min-w-0">
-              <p className="font-black text-slate-800 truncate">{s.name}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="font-black text-slate-800 truncate">{s.name}</p>
+                {s.isSeasonal && (
+                  <span className="text-[9px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full shrink-0">제철</span>
+                )}
+              </div>
               <p className="text-[11px] font-bold text-slate-500">{s.serving} · {s.kcal} kcal · {s.mainNutrient}</p>
             </div>
           </li>

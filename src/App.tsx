@@ -22,10 +22,11 @@ import { updateAccount } from './services/supabaseService';
 import { type CalPackageId } from './config/packages';
 import { inferMealTypeByTime } from './utils/mealTime';
 import { divideByPortion } from './utils/portion';
+import { getCurrentDong } from './utils/locationUtils';
 import {
   signIn, signUp, signOut, getSession, onAuthChange,
   saveMeal, loadHistory, deleteMeal as dbDeleteMeal, clearHistory as dbClearHistory,
-  updateMealClassification,
+  updateMealClassification, updateMealMemo,
   SupabaseUser, SUPABASE_AVAILABLE,
 } from './services/supabaseService';
 import BatchAnalyzer from './components/BatchAnalyzer';
@@ -46,6 +47,7 @@ import AccountModal from './components/cal/AccountModal';
 import MealCardMenu from './components/meal/MealCardMenu';
 import MealEditModal from './components/meal/MealEditModal';
 import MealPreviewModal from './components/meal/MealPreviewModal';
+import MealMemoModal from './components/meal/MealMemoModal';
 import AnalyzeModeTabs from './components/analyze/AnalyzeModeTabs';
 import ExerciseRecommendCard from './components/recommend/ExerciseRecommendCard';
 import SnackRecommendCard from './components/recommend/SnackRecommendCard';
@@ -55,7 +57,7 @@ import { calcDailyScore } from './services/scoreService';
 import { normalizeForAnalysis } from './utils/analysisImage';
 import type { AnalysisStep } from './components/AnalysisProgress.types';
 import type { BatchAnalysisCompletion } from './components/BatchAnalyzer';
-import type { MealRecord, DailyScore } from './types';
+import type { MealRecord, MealMemo, DailyScore } from './types';
 
 type Gender = 'male' | 'female';
 type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active';
@@ -161,6 +163,7 @@ export default function App() {
   const [previewingMeal, setPreviewingMeal] = useState<MealRecord | null>(null);
   const [analyzeMode, setAnalyzeMode] = useState<'single' | 'batch'>('single');
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [memoingMeal, setMemoingMeal] = useState<MealRecord | null>(null);
 
   // --- Overlays ---
   const [toast, setToast] = useState<Toast | null>(null);
@@ -431,6 +434,9 @@ export default function App() {
     setStepDetails({});
     setCurrentAnalyzingIdx(0);
 
+    // 위치 정보 백그라운드 수집 (비blocking — 권한 거부 시 null)
+    const locationPromise = getCurrentDong().catch(() => null);
+
     try {
       const results: MealRecord[] = [];
       for (let i = 0; i < sourceImages.length; i++) {
@@ -478,6 +484,8 @@ export default function App() {
         // T-068: N인분이면 영양/양 필드를 1인분 기준으로 환산해서 DB에 저장. portion_count는 원본 N 보존.
         const perPortion = divideByPortion(analysis, portionCount);
         // T-072: dbMatch가 있으면 matched_food_id/similarity를 record에 첨부 → supabase 영속.
+        // 첫 번째 이미지 분석 완료 시점에 위치 결과 수집 (이후는 캐시됨)
+        const locationDong = await locationPromise ?? undefined;
         results.push({
           ...perPortion,
           id: img.id,
@@ -488,6 +496,7 @@ export default function App() {
           portionCount,
           matchedFoodId: analysis.dbMatch?.food_id ?? null,
           matchSimilarity: analysis.dbMatch?.similarity ?? null,
+          locationDong,
         });
       }
 
@@ -570,6 +579,16 @@ export default function App() {
     // 날짜 이동 시 변경된 식사가 보이는 날짜로 자동 이동 (수아 §회귀 3)
     if (patch.date) setSelectedDateKey(localDateKey(patch.date));
     showToast('식사 정보가 업데이트됐어요 ✨');
+  };
+
+  const handleSaveMemo = async (mealId: string, memo: MealMemo) => {
+    setHistory(prev => prev.map(m => m.id === mealId ? { ...m, memo } : m));
+    if (selectedMeal?.id === mealId) setSelectedMeal(prev => prev ? { ...prev, memo } : prev);
+
+    if (user) {
+      void updateMealMemo(mealId, memo as Record<string, unknown>);
+    }
+    showToast('메모가 저장됐어요 📝');
   };
 
   const deleteRecord = (id: string, e?: React.MouseEvent) => {
@@ -934,6 +953,7 @@ export default function App() {
                         <MealCardMenu
                           onEdit={() => setEditingMeal(meal)}
                           onDelete={() => deleteRecord(meal.id)}
+                          onMemo={() => setMemoingMeal(meal)}
                         />
                       </div>
                     ))}
@@ -1191,6 +1211,7 @@ export default function App() {
                 onClearDay={clearDayRecords}
                 onSelect={(meal) => setPreviewingMeal(meal)}
                 onEdit={(meal) => setEditingMeal(meal)}
+                onMemo={(meal) => setMemoingMeal(meal)}
               />
 
               <div className="flex justify-between items-center mt-2">
@@ -1274,6 +1295,7 @@ export default function App() {
                                     <MealCardMenu
                                       onEdit={() => setEditingMeal(meal)}
                                       onDelete={() => deleteRecord(meal.id)}
+                                      onMemo={() => setMemoingMeal(meal)}
                                     />
                                   </div>
                                 </div>
@@ -1477,6 +1499,13 @@ export default function App() {
         }}
         onLogout={() => { void handleLogout(); }}
         onClose={() => setShowAccountModal(false)}
+      />
+
+      <MealMemoModal
+        open={!!memoingMeal}
+        meal={memoingMeal}
+        onSave={(id, memo) => { void handleSaveMemo(id, memo); }}
+        onClose={() => setMemoingMeal(null)}
       />
 
       <AnimatePresence>

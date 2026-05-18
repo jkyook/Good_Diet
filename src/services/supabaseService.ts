@@ -367,6 +367,35 @@ export async function updateMealClassification(
   return { error: error ? error.message : null };
 }
 
+/**
+ * 식사 메모/위치 업데이트.
+ * meal_history 테이블에 memo(jsonb), location_dong(text) 컬럼이 없는 환경에서는
+ * 에러를 무시하고 localStorage 기반으로만 동작 (클라 state에 이미 반영됨).
+ */
+export async function updateMealMemo(
+  mealId: string,
+  memo: Record<string, unknown> | null,
+  locationDong?: string,
+): Promise<{ error: string | null }> {
+  if (!supabase) return { error: null }; // localStorage only
+
+  const row: Record<string, unknown> = { memo };
+  if (locationDong !== undefined) row.location_dong = locationDong;
+
+  const { error } = await supabase
+    .from('meal_history')
+    .update(row)
+    .eq('id', mealId);
+
+  // 컬럼 미존재 오류는 무시 (로컬 state에 이미 반영됨)
+  if (error && error.message.includes('column')) {
+    console.info('[updateMealMemo] DB 컬럼 없음, localStorage에만 저장됨:', error.message);
+    return { error: null };
+  }
+
+  return { error: error ? error.message : null };
+}
+
 export async function deleteMeal(
   mealId: string,
 ): Promise<{ error: string | null }> {

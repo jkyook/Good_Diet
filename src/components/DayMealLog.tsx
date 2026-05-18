@@ -22,6 +22,7 @@ interface Props {
   onClearDay: (date: string) => void;
   onSelect?: (record: MealRecord) => void;
   onEdit?: (record: MealRecord) => void;
+  onMemo?: (record: MealRecord) => void;
 }
 
 interface DaySummary {
@@ -63,7 +64,7 @@ function buildSummary(records: MealRecord[], targetDate: string): DaySummary {
   return { date: targetDate, totalCalories, totalProtein, totalCarbs, totalFat, mealCount: meals.length, byType };
 }
 
-export default function DayMealLog({ date, records, dailyCalorieTarget = 2000, onDeleteMeal, onClearDay, onSelect, onEdit }: Props) {
+export default function DayMealLog({ date, records, dailyCalorieTarget = 2000, onDeleteMeal, onClearDay, onSelect, onEdit, onMemo }: Props) {
   const today = dateKey(new Date());
   const targetDate = date ?? today;
 
@@ -173,6 +174,7 @@ export default function DayMealLog({ date, records, dailyCalorieTarget = 2000, o
                     onSelect={onSelect ? () => onSelect(record) : undefined}
                     onEdit={onEdit ? () => onEdit(record) : undefined}
                     onDelete={() => handleDelete(record.id)}
+                    onMemo={onMemo ? () => onMemo(record) : undefined}
                   />
                 ))}
               </div>
@@ -192,12 +194,13 @@ export default function DayMealLog({ date, records, dailyCalorieTarget = 2000, o
 }
 
 function MealRow({
-  record, onSelect, onEdit, onDelete,
+  record, onSelect, onEdit, onDelete, onMemo,
 }: {
   record: MealRecord;
   onSelect?: () => void;
   onEdit?: () => void;
   onDelete: () => void;
+  onMemo?: () => void;
 }) {
   const handleActivate = () => {
     if (onSelect) onSelect();
@@ -230,7 +233,7 @@ function MealRow({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5 mt-0.5">
+        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
           <span className="text-xs text-gray-500">{record.calories} kcal</span>
           {record.weightGrams > 0 && (
             <span className="text-xs text-gray-400">· {record.weightGrams}g</span>
@@ -241,10 +244,39 @@ function MealRow({
             </span>
           )}
         </div>
+        {/* 메모 칩 */}
+        {(record.memo?.with || record.memo?.place || record.locationDong || record.memo?.alcohol) && (
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
+            {record.locationDong && (
+              <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">
+                📍 {record.locationDong}
+              </span>
+            )}
+            {record.memo?.with && (
+              <span className="text-[10px] font-bold bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded-full">
+                👥 {record.memo.with}
+              </span>
+            )}
+            {record.memo?.place && (
+              <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">
+                🏠 {record.memo.place}
+              </span>
+            )}
+            {record.memo?.alcohol && (
+              <span className="text-[10px] font-bold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">
+                🍺 {record.memo.alcohol}
+              </span>
+            )}
+          </div>
+        )}
+        {record.memo?.note && (
+          <p className="text-[11px] text-gray-400 mt-0.5 truncate italic">"{record.memo.note}"</p>
+        )}
       </div>
       <MealCardMenu
         onEdit={() => onEdit?.()}
         onDelete={onDelete}
+        onMemo={onMemo}
       />
     </div>
   );

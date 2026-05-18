@@ -5,12 +5,13 @@ import { MoreHorizontal } from 'lucide-react';
 interface MealCardMenuProps {
   onEdit: () => void;
   onDelete: () => void;
+  onMemo?: () => void;
 }
 
 const POPOVER_W = 132;   // min-w-[132px] 기준
-const POPOVER_H = 92;    // 2개 메뉴 항목 + padding 추정
+const POPOVER_H = 132;   // 3개 메뉴 항목 + padding 추정
 
-export default function MealCardMenu({ onEdit, onDelete }: MealCardMenuProps) {
+export default function MealCardMenu({ onEdit, onDelete, onMemo }: MealCardMenuProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -73,6 +74,16 @@ export default function MealCardMenu({ onEdit, onDelete }: MealCardMenuProps) {
       >
         <span aria-hidden="true">✏️</span> 편집
       </button>
+      {onMemo && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={(e) => { e.stopPropagation(); setOpen(false); onMemo(); }}
+          className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-orange-50 active:bg-orange-100 flex items-center gap-2 border-t border-slate-100"
+        >
+          <span aria-hidden="true">📝</span> 메모
+        </button>
+      )}
       <button
         type="button"
         role="menuitem"
