@@ -42,6 +42,46 @@ const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string }[] = [
   { value: 'active',    label: '활발한 활동 (주 6-7일)' },
 ];
 
+interface BmiInfo {
+  bmi: number;
+  label: string;
+  color: string;         // tailwind text color class
+  bgColor: string;       // tailwind bg color class
+  ringColor: string;     // tailwind ring color class
+  targetMinKg: number;   // 정상 하한 (BMI 18.5)
+  targetMaxKg: number;   // 정상 상한 (BMI 22.9)
+  idealKg: number;       // 이상 목표 (BMI 22.0)
+}
+
+function calcBmi(weightKg: number, heightCm: number): BmiInfo {
+  const hm = heightCm / 100;
+  const bmi = weightKg / (hm * hm);
+  const targetMinKg = Math.round(18.5 * hm * hm * 10) / 10;
+  const targetMaxKg = Math.round(22.9 * hm * hm * 10) / 10;
+  const idealKg     = Math.round(22.0 * hm * hm * 10) / 10;
+
+  let label: string;
+  let color: string;
+  let bgColor: string;
+  let ringColor: string;
+
+  if (bmi < 18.5) {
+    label = '저체중'; color = 'text-sky-700'; bgColor = 'bg-sky-50'; ringColor = 'ring-sky-200';
+  } else if (bmi < 23.0) {
+    label = '정상'; color = 'text-emerald-700'; bgColor = 'bg-emerald-50'; ringColor = 'ring-emerald-200';
+  } else if (bmi < 25.0) {
+    label = '과체중'; color = 'text-amber-700'; bgColor = 'bg-amber-50'; ringColor = 'ring-amber-200';
+  } else if (bmi < 30.0) {
+    label = '비만 1단계'; color = 'text-orange-700'; bgColor = 'bg-orange-50'; ringColor = 'ring-orange-200';
+  } else if (bmi < 35.0) {
+    label = '비만 2단계'; color = 'text-rose-700'; bgColor = 'bg-rose-50'; ringColor = 'ring-rose-200';
+  } else {
+    label = '고도비만'; color = 'text-rose-900'; bgColor = 'bg-rose-100'; ringColor = 'ring-rose-300';
+  }
+
+  return { bmi: Math.round(bmi * 10) / 10, label, color, bgColor, ringColor, targetMinKg, targetMaxKg, idealKg };
+}
+
 function formatKstResetAt(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -99,6 +139,8 @@ export default function AccountModal({
   const heightNum = Number(height);
   const heightValid = Number.isFinite(heightNum) && heightNum >= 80 && heightNum <= 250;
   const genderNext: 'male' | 'female' | null = gender === '' ? null : gender;
+
+  const bmiInfo = (weightValid && heightValid) ? calcBmi(weightNum, heightNum) : null;
 
   const changed =
     (ageNum !== profile.age) ||
@@ -265,6 +307,116 @@ export default function AccountModal({
                     {!heightValid && '키 80–250cm '}
                     범위 확인
                   </p>
+                )}
+
+                {/* BMI 카드 */}
+                {bmiInfo && (
+                  <div className={`${bmiInfo.bgColor} ring-1 ${bmiInfo.ringColor} rounded-2xl px-4 py-3 space-y-2`}>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">BMI 분석</p>
+                      <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full ring-1 ${bmiInfo.ringColor} ${bmiInfo.bgColor} ${bmiInfo.color}`}>
+                        {bmiInfo.label}
+                      </span>
+                    </div>
+
+                    <div className="flex items-baseline gap-1.5">
+                      <span className={`text-3xl font-black ${bmiInfo.color}`}>{bmiInfo.bmi}</span>
+                      <span className={`text-xs font-bold ${bmiInfo.color} opacity-70`}>kg/m²</span>
+                    </div>
+
+                    {/* BMI 게이지 바 — 범위 BMI 15~40 */}
+                    {(() => {
+                      const BMI_MIN = 15, BMI_MAX = 40;
+                      // 각 BMI 경계값을 퍼센트로 변환
+                      const pct = (v: number) => ((v - BMI_MIN) / (BMI_MAX - BMI_MIN)) * 100;
+                      const p185 = pct(18.5).toFixed(1); // 14%
+                      const p230 = pct(23.0).toFixed(1); // 32%
+                      const p250 = pct(25.0).toFixed(1); // 40%
+                      const p300 = pct(30.0).toFixed(1); // 60%
+                      const p350 = pct(35.0).toFixed(1); // 80%
+                      const markerPct = Math.min(Math.max(pct(bmiInfo.bmi), 1), 99);
+                      return (
+                        <div className="relative py-1.5">
+                          {/* 색상 바 — 경계에서 하드 컷 */}
+                          <div
+                            className="h-2 rounded-full"
+                            style={{
+                              background: `linear-gradient(to right,
+                                #7dd3fc 0%, #7dd3fc ${p185}%,
+                                #34d399 ${p185}%, #34d399 ${p230}%,
+                                #fbbf24 ${p230}%, #fbbf24 ${p250}%,
+                                #fb923c ${p250}%, #fb923c ${p300}%,
+                                #fb7185 ${p300}%, #fb7185 ${p350}%,
+                                #9f1239 ${p350}%, #9f1239 100%
+                              )`,
+                            }}
+                          />
+                          {/* 마커 — translateX(-50%)로 정중앙 정렬 */}
+                          <div
+                            className="absolute w-3 h-3 bg-white rounded-full shadow-md border-2 border-slate-500"
+                            style={{
+                              left: `${markerPct}%`,
+                              top: '50%',
+                              transform: 'translate(-50%, -50%)',
+                            }}
+                          />
+                        </div>
+                      );
+                    })()}
+                    {/* 눈금 레이블 — 실제 BMI 비율에 맞게 배치 */}
+                    <div className="relative h-3 text-[9px] font-bold text-slate-400 select-none">
+                      {[
+                        { label: '15', bmi: 15 },
+                        { label: '18.5', bmi: 18.5 },
+                        { label: '23', bmi: 23 },
+                        { label: '25', bmi: 25 },
+                        { label: '30', bmi: 30 },
+                        { label: '35', bmi: 35 },
+                        { label: '40', bmi: 40 },
+                      ].map(({ label, bmi }) => {
+                        const p = ((bmi - 15) / 25) * 100;
+                        return (
+                          <span
+                            key={label}
+                            className="absolute -translate-x-1/2 leading-none"
+                            style={{ left: `${p}%` }}
+                          >
+                            {label}
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    {/* 목표 체중 */}
+                    <div className="pt-1 border-t border-white/60">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">목표 체중 (정상 범위)</p>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 bg-white/70 rounded-xl px-3 py-1.5 text-center">
+                          <p className="text-[9px] font-bold text-slate-400">최소</p>
+                          <p className="text-sm font-black text-slate-700">{bmiInfo.targetMinKg} <span className="text-[10px] font-bold">kg</span></p>
+                        </div>
+                        <div className="flex-1 bg-emerald-500 rounded-xl px-3 py-1.5 text-center shadow-sm">
+                          <p className="text-[9px] font-bold text-emerald-100">권장 목표</p>
+                          <p className="text-sm font-black text-white">{bmiInfo.idealKg} <span className="text-[10px] font-bold">kg</span></p>
+                        </div>
+                        <div className="flex-1 bg-white/70 rounded-xl px-3 py-1.5 text-center">
+                          <p className="text-[9px] font-bold text-slate-400">최대</p>
+                          <p className="text-sm font-black text-slate-700">{bmiInfo.targetMaxKg} <span className="text-[10px] font-bold">kg</span></p>
+                        </div>
+                      </div>
+                      {bmiInfo.bmi >= 18.5 && bmiInfo.bmi < 23.0 ? (
+                        <p className="mt-1.5 text-[10px] font-bold text-emerald-600 text-center">현재 정상 체중 범위입니다 ✓</p>
+                      ) : (
+                        <p className="mt-1.5 text-[10px] font-bold text-slate-500 text-center">
+                          권장 목표까지{' '}
+                          <span className={`font-black ${bmiInfo.color}`}>
+                            {Math.abs(Math.round((weightNum - bmiInfo.idealKg) * 10) / 10)} kg{' '}
+                            {weightNum > bmiInfo.idealKg ? '감량' : '증량'}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 )}
               </section>
 
